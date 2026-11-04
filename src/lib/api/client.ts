@@ -164,6 +164,40 @@ export interface ShadowDocument {
   version: number;
 }
 
+export interface TrendPoint {
+  ts: string;
+  value: number;
+}
+
+export interface TelemetryTrendSeries {
+  identifier: string;
+  name: string;
+  unit: string;
+  points: TrendPoint[];
+}
+
+export interface TelemetryTrendData {
+  hours: number;
+  series: TelemetryTrendSeries[];
+}
+
+export type DeviceLogType = "all" | "property" | "event" | "action" | "forward" | "status";
+
+export interface DeviceLogItem {
+  id: string;
+  time: string;
+  type: Exclude<DeviceLogType, "all">;
+  level: string;
+  summary: string;
+}
+
+export interface DeviceLogsData {
+  total: number;
+  page: number;
+  page_size: number;
+  items: DeviceLogItem[];
+}
+
 export interface ActivityItem {
   time: string;
   type: string;
@@ -674,6 +708,16 @@ export const api = {
   getDevice: (deviceId: string) => apiFetch<DeviceDetail>(`/api/v1/devices/${deviceId}`),
   getTelemetry: (deviceId: string, limit = 20) =>
     apiFetch<TelemetryPoint[]>(`/api/v1/devices/${deviceId}/telemetry?limit=${limit}`),
+  getTelemetryTrend: (deviceId: string, hours: 1 | 6 | 24 = 24) =>
+    apiFetch<TelemetryTrendData>(`/api/v1/devices/${deviceId}/telemetry/trend?hours=${hours}`),
+  getDeviceLogs: (deviceId: string, query: { type?: DeviceLogType; page?: number; page_size?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (query.type) params.set("type", query.type);
+    if (query.page) params.set("page", String(query.page));
+    if (query.page_size) params.set("page_size", String(query.page_size));
+    const qs = params.toString();
+    return apiFetch<DeviceLogsData>(`/api/v1/devices/${deviceId}/logs${qs ? `?${qs}` : ""}`);
+  },
 
   // 设备注册
   registerDevice: (productId: string, deviceName: string) =>

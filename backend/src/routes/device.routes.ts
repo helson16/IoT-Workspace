@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { DeviceService } from '../services/device.service.js';
+import { DeviceDetailService } from '../services/device-detail.service.js';
 import { success, successCreated, paginated } from '../shared/response.js';
 import { ValidationError, DeviceNotFoundError } from '../shared/errors.js';
 
@@ -356,6 +357,59 @@ export default async function deviceRoutes(fastify: FastifyInstance) {
         timestamp: h.timestamp.toISOString(),
       })),
     );
+    reply.code(resp.statusCode).send(resp.body);
+  });
+
+  // GET /api/v1/devices/:deviceId/telemetry/trend - 遥测趋势(按物模型映射, 抽稀)
+  fastify.get('/api/v1/devices/:deviceId/telemetry/trend', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['deviceId'],
+        properties: { deviceId: { type: 'string' } },
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          hours: { type: 'integer', enum: [1, 6, 24], default: 24 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { deviceId } = request.params as any;
+    const query = request.query as any;
+    const hours = Number(query.hours) || 24;
+    const detailService = new DeviceDetailService(fastify.db);
+    const trend = await detailService.getTelemetryTrend(deviceId, hours);
+    const resp = success(trend);
+    reply.code(resp.statusCode).send(resp.body);
+  });
+
+  // GET /api/v1/devices/:deviceId/logs - 设备通信日志时间线(5 类 UNION)
+  fastify.get('/api/v1/devices/:deviceId/logs', {
+    schema: {
+      params: {
+        type: 'object',
+        required: ['deviceId'],
+        properties: { deviceId: { type: 'string' } },
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['all', 'property', 'event', 'action', 'forward', 'status'], default: 'all' },
+          page: { type: 'integer', minimum: 1, default: 1 },
+          page_size: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { deviceId } = request.params as any;
+    const query = request.query as any;
+    const page = Number(query.page) || 1;
+    const pageSize = Number(query.page_size) || 50;
+    const detailService = new DeviceDetailService(fastify.db);
+    const result = await detailService.getLogs(deviceId, query.type ?? 'all', page, pageSize);
+    const resp = success(result);
     reply.code(resp.statusCode).send(resp.body);
   });
 }

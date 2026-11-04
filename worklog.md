@@ -665,3 +665,24 @@ Stage Summary:
 - 概览页快捷入口全部可用且指向正确, 设备列表分页达可用标准, 大数字千分位对齐全站
 - quickEntries 数据驱动模式: 后续入口增删只改数组不动 JSX
 - 遗留未提交文件 STATUS.md / case-table.mts(typesafe 线程)保持原样未纳入本次提交
+
+Task ID: 20
+Agent: Main Agent
+Task: 设备详情页增强 — 遥测趋势图/影子物模型映射/通信日志时间线(用户选定方向)
+
+Work Log:
+- 调研: 详情页现状(信息卡+影子裸 KV+遥测平铺列表); 数据源盘点 prop_hist 34 万/fwd_logs 8.8 万/event 1.9 万条沉睡无设备维度消费入口; 物模型 spec 含 name/unit
+- 设计 .ai-docs/designs/device-detail-enhance-design.md: 3 模块方案(A 遥测趋势新端点/B 影子映射纯前端/C 通信日志 UNION 5 类新端点)
+- 后端: 新建 device-detail.service.ts(纯函数 sampleSeries 均匀抽稀保首尾/buildTelemetryTrend 分组+数值过滤+物模型序排序 + DeviceDetailService); device.routes.ts 新增 GET /devices/:id/telemetry/trend?hours=1|6|24 与 GET /devices/:id/logs?type=5类&page
+- 修复 2 个实现 bug: sampleSeries maxPoints=1 除零产生 NaN(单点特判); logs 主查询 UNION 分支漏 select device_id 列致 42703(对齐 count 查询补列); logs 补设备存在校验与 trend 404 语义一致
+- 单测 9 用例(抽稀 4 + 趋势构建 5), 首轮 1 个测试预期写错(round(3×24.75)=74 非 75, 修预期); backend 273/273
+- 前端: client.ts 增 TelemetryTrendSeries/DeviceLogItem 等类型 + getTelemetryTrend/getDeviceLogs; device-detail-page.tsx 重构: TrendCard(实时值 chips 中文名+数值+单位/多序列折线 connectNulls 合并错位时间戳/1h-6h-24h tab) + ShadowSection(物模型映射中文名+单位, 未定义 key 降级裸 identifier) + LogTimeline(垂直时间线 5 类配色圆点/类型筛选 tab/分页 共 N 条千分位); 删除旧 getTelemetry 20 条列表查询
+- curl 验证: trend 24h 返回 3 序列 240 点(当前温度°C/当前湿度%/电源开关), 1h 抽稀 240 点; logs all total 408,112(forward+property 按时间倒序混排), type=forward 88,061, type=action 空表 0(真实空态), 不存在设备 404
+- E2E 11/11 PASS: chips「当前温度 23.3°C」/折线图中文图例/1h 切换高亮/影子中文名+单位/version/总数「共 408,961 条」千分位/时间线前 3 行 forward+property 混排/筛选 408,961→88,256/翻页第 2/20449 页/console 0 新错误
+- E2E 插曲: 首轮 agent 误用 URL 直达(SPA 无路由 404)+汉堡按钮坐标点击失败; 二轮改 browser_evaluate DOM 点击 aside 首个 button 绕过, 全部通过
+
+Stage Summary:
+- 设备详情页从「信息+裸数据」升级为完整设备运维视图: 趋势可视化/语义化影子/通信日志时间线
+- sampleSeries 抽稀 + buildTelemetryTrend 模式可复用于其他设备的时序图表需求
+- 通信日志 UNION 5 类方案(参考 ops.routes.ts)把 forward_logs 首次纳入设备维度消费
+- 遗留未提交文件 STATUS.md / case-table.mts(typesafe 线程)保持原样未纳入本次提交
