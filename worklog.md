@@ -552,3 +552,24 @@ Stage Summary:
 - 修复 EMQX 认证 hook 的 productId 截断缺陷(11→13), 该缺陷使 EMQX 真实接入时认证必然失败
 - known issue(记录不修): internal online/property-report 回调不拦截 disabled 设备(被禁用的活跃设备会被回调置回 online), 属另一安全域问题
 - 附带: authenticate() 与 mqtt auth hook 现均记录 lastIp; worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交
+
+---
+Task ID: 15
+Agent: Main Agent
+Task: 开发中心（API Explorer 在线调试）接入真实数据
+
+Work Log:
+- 设计文档 .ai-docs/designs/cloud-dev-design.md: mock 云函数页重写为平台 API Explorer(目录/文档/在线调试/调用历史), 59 条端点全量枚举(50 可调试 v1 + 8 internal 仅文档)
+- 后端: Prisma 新增 ApiInvokeLog 模型(api_invoke_logs 表, db push + generate); api-catalog.service.ts(API_CATALOG 静态目录 12 分组 + 纯函数 findApiById/buildInvokeRequest/truncateForStore/buildHistoryStats + ApiExplorerService 三方法); api-explorer.routes.ts 三端点(catalog/invoke/history)
+- 在线调试实现: 前端只传 api_id + 参数值, method/path 模板由后端目录决定(防篡改); buildInvokeRequest 做 path 参数必填校验 + encodeURIComponent 替换 + query 白名单过滤拼接; fastify.inject() 进程内完整生命周期执行目标路由(透传调用者 Authorization, 目标路由 JWT/schema 校验照常); internal 域 invocable=false 不可达, api-explorer 自身不在目录天然防递归
+- errors.ts 新增 ApiNotFoundError(40405); 调用历史入库响应体截断 8KB 防大响应撑表
+- 前端: client.ts 增 7 类型 + 3 方法; cloud-dev-page.tsx 全量重写(头部 4 统计徽章/左栏 API 分类树可折叠+搜索过滤/右栏文档卡+调试面板(path/query 参数输入+body JSON 预填示例可编辑)+响应区(状态码徽章/耗时/pretty JSON)/internal 锁定提示/最近调用表点击行联动跳转); react-query invoke mutation 成功自动失效历史
+- 质量门: root tsc+lint 0; backend typecheck 0; npm test 235/235(新增 api-catalog.service.test.ts 27 用例: 目录结构 5/findApiById 2/buildInvokeRequest 10/truncateForStore 3/buildHistoryStats 3/Service 4)
+- E2E 9/9 PASS(浏览器): 面包屑「云端开发」/统计徽章 API 58 可调试 50/12 分组树渲染/stats.overview 发送 200 + device_count 12/devices.list?page_size=5 返回 5 条/缺 productId 发送被拒 40001「缺少路径参数」/internal 回声测试无发送按钮显示锁定提示/历史表含真实调用且点击行联动切回 API/console 0 错误(仅已知噪音)
+- DB 核验: api_invoke_logs 4 条真实调用记录与页面历史一致(含 41ms/26ms 真实耗时); 缺参数被拒的调试请求不落库(未执行目标路由, 语义正确)
+
+Stage Summary:
+- 开发中心成为第 11 个真实数据页面; 剩余 mock 仅 1 个: 音视频服务(log-service)
+- API Explorer 端到端真实闭环: 静态目录枚举全部路由 → 白名单代理(fastify.inject 进程内执行) → PG 持久化调用历史
+- 白名单三层防护: 目录条目(invocable) + method/path 后端决定 + path/query 参数按声明约束, 前端无法注入任意 URL
+- worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交

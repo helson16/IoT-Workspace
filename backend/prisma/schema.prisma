@@ -297,3 +297,22 @@ model DeviceAuthLog {
   @@index([authType], map: "idx_auth_logs_type")
   @@map("device_auth_logs")
 }
+
+// ============================================================
+// 13. API Explorer 在线调试调用日志 (API Invoke Logs)
+// ============================================================
+model ApiInvokeLog {
+  id           Int      @id @default(autoincrement())
+  apiId        String   @map("api_id") @db.VarChar(64)
+  method       String   @db.VarChar(8)
+  path         String   @db.VarChar(512) // 实际请求 URL(含 query)
+  statusCode   Int      @map("status_code")
+  durationMs   Int      @map("duration_ms")
+  requestBody  String?  @map("request_body") @db.Text
+  responseBody String?  @map("response_body") @db.Text // 截断至 8KB
+  truncated    Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)], map: "idx_api_invoke_created")
+  @@map("api_invoke_logs")
+}
