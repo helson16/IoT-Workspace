@@ -22,6 +22,7 @@ import analyticsRoutes from './routes/analytics.routes.js';
 import commandParseRoutes from './routes/command-parse.routes.js';
 import securityRoutes from './routes/security.routes.js';
 import apiExplorerRoutes from './routes/api-explorer.routes.js';
+import avRoutes from './routes/av.routes.js';
 
 const fastify = Fastify({
   logger: {
@@ -162,5 +163,6 @@ await fastify.register(analyticsRoutes);
 await fastify.register(commandParseRoutes);
 await fastify.register(securityRoutes);
 await fastify.register(apiExplorerRoutes);
+await fastify.register(avRoutes);
 
 export default fastify;

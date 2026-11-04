@@ -3,9 +3,10 @@ import { config } from '../config/index.js';
 import { ShadowService } from '../services/shadow.service.js';
 import { RuleEngineService } from '../services/rule-engine.service.js';
 import { recordAuthLog } from '../services/security.service.js';
+import { AvService } from '../services/av.service.js';
 import { thingModelValidator } from '../shared/validator.js';
 import { success } from '../shared/response.js';
-import { UnauthorizedError, PropertyValueInvalidError } from '../shared/errors.js';
+import { UnauthorizedError, PropertyValueInvalidError, DeviceNotFoundError } from '../shared/errors.js';
 
 export default async function internalRoutes(fastify: FastifyInstance) {
   // Internal auth middleware
@@ -179,6 +180,60 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     }
 
     const resp = success({ received: true, event_id });
+    reply.code(resp.statusCode).send(resp.body);
+  });
+
+  // POST /api/internal/mqtt/av-report - 设备音视频事件上报回调
+  // 摄像头设备录制/截图/回放完成后的元数据上报(仅元数据, 无真实视频流)。
+  // 与 EMQX Webhook 调用本服务的路径一致, 供设备模拟器 / 真实网关使用。
+  fastify.post('/api/internal/mqtt/av-report', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['device_id', 'events'],
+        properties: {
+          device_id: { type: 'string' },
+          events: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 100,
+            items: {
+              type: 'object',
+              required: ['event_type'],
+              properties: {
+                event_type: { type: 'string', maxLength: 32 },
+                status: { type: 'string', maxLength: 16 },
+                file_name: { type: 'string', maxLength: 255 },
+                file_size: { type: 'number' },
+                duration_sec: { type: 'number' },
+                stream_protocol: { type: 'string', maxLength: 16 },
+                detail: { type: 'object' },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    await internalAuth(request);
+
+    const { device_id, events } = request.body as any;
+
+    // 校验设备存在(取 deviceName 供文件名兜底), 不存在则 404
+    const device = await fastify.db.device.findUnique({
+      where: { deviceId: device_id },
+      select: { deviceName: true },
+    });
+    if (!device) {
+      throw new DeviceNotFoundError(`设备 ${device_id} 不存在`);
+    }
+
+    const avService = new AvService(fastify.db);
+    const { received } = await avService.recordEvents(device_id, device.deviceName, events);
+
+    await fastify.setDeviceOnline(device_id);
+
+    const resp = success({ received: true, count: received });
     reply.code(resp.statusCode).send(resp.body);
   });
 

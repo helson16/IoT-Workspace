@@ -573,3 +573,26 @@ Stage Summary:
 - API Explorer 端到端真实闭环: 静态目录枚举全部路由 → 白名单代理(fastify.inject 进程内执行) → PG 持久化调用历史
 - 白名单三层防护: 目录条目(invocable) + method/path 后端决定 + path/query 参数按声明约束, 前端无法注入任意 URL
 - worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交
+
+---
+Task ID: 16
+Agent: Main Agent
+Task: 音视频服务页接入真实数据（模拟音视频元数据链路）
+
+Work Log:
+- 设计文档 .ai-docs/designs/av-service-design.md: 方向为"模拟音视频元数据链路"——模拟器新增摄像头设备上报录制/截图/回放事件元数据(仅元数据, 无真实视频流), 后端建表存储, 页面全真实数据
+- 后端: Prisma 新增 AvEventLog 模型(av_event_logs 表: event_type/status/file_name/file_size/duration_sec/stream_protocol/detail, db push + generate); av.service.ts(纯函数 parseAvEvent/buildFileName/summarizeAvEvents + AvService: recordEvents/getStats/listEvents); internal.routes.ts 新增 POST /api/internal/mqtt/av-report 批量上报回调(X-Internal-Secret 鉴权, 设备存在性校验 40402, 单条校验失败 40001); av.routes.ts 两端点(GET /api/v1/av/stats 统计卡 + GET /api/v1/av/events 分页列表, JWT 保护, 类型/状态/设备/关键词四维筛选)
+- 校验规则: recording/playback 必须时长>0, snapshot 时长恒 0(携带也归零); file_size ≤10GB, duration ≤86400s; 协议枚举 RTMP/HLS/WebRTC; 设备未带 file_name 时按 设备名_时间戳.扩展 确定性兜底
+- 统计口径: 今日窗口由 Node 侧算 todayStart 传入(避开 PG session 时区 8h 偏移); storage_bytes 累计全量, today_* 只算今日; success_rate 含历史; device_count 优先今日活跃设备
+- 模拟器: sim-device.js 新增 SimCamera(设备名含 -cam 分派): 幂等自注册「智能摄像头」产品+设备(409 冲突改查详情), 周期随机上报 45% recording(30~300s/5~80MB)/35% snapshot(100~500KB)/20% playback(10~600s/0 存储), 少量 failed 样本(5%/2%/10%)带 error_code; 默认设备列表 = 温控器 + front-door-cam-01 + back-yard-cam-02; 过程中修复 api() 包装改造破坏旧调用点返回形状的回归(两轮)
+- 前端: client.ts 增 AvStats/AvEventItem/AvEventQuery 3 类型 + getAvStats/getAvEvents 2 方法; log-service-page.tsx 全量重写(6 统计卡: 今日录制/截图/回放/云存空间/回放时长/成功率 + 工具栏类型/状态双筛选+搜索+刷新 + 事件表 9 列含文件名/大小/时长/协议 + 分页 + 骨架/空态/错误重试三件套, 10s 自动刷新); top-nav 面包屑 log-service 由「日志服务」正名「音视频服务」(与侧边栏一致)
+- 质量门: root tsc+lint 0; backend typecheck 0; npm test 255/255(新增 av.service.test.ts 20 用例: 常量 1/parseAvEvent 12/buildFileName 1/summarizeAvEvents 7)
+- E2E 10/10 PASS(浏览器): 面包屑「音视频服务」/统计卡真实数值(今日录制 1349/截图 1041/回放 600, 云存 56.41GB, 成功率 95.1%, 与 DB 2900+ 条一致)/表格真实行(双摄像头/智能摄像头/三类 badge/真实文件名/协议/状态)/类型筛选截图 2956→1035 条生效/恢复全量/console 0 新错误(仅已归档噪音: ERR_ABORTED·HMR/data-trae-ref/React DevTools)
+- curl 链路验证: 无 secret 40101/非法类型 40001/不存在设备 40402/合法写入落库/筛选/聚合/关键词搜索全通, 测试数据已清理
+- DB 核验: av_event_logs 持续入库(模拟器 5s 周期), 页面统计与 psql 聚合一致
+
+Stage Summary:
+- 音视频服务页成为第 12 个真实数据页面; 全部 12 个页面 100% 真实数据, mock 清零
+- AV 元数据链路端到端闭环: 模拟摄像头(幂等自注册) → internal 批量回调(校验+兜底文件名) → PG 持久化 → 统计/列表 API → 页面渲染
+- 顺手观察(未修, 待用户定夺): top-nav pageLabels 中 rule-engine 映射「安全认证」疑似历史遗留错标, 建议连同 message-queue 一并复核与侧边栏的对应关系
+- worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交
