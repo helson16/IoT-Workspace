@@ -44,7 +44,7 @@ export default async function opsRoutes(fastify: FastifyInstance) {
         db.$queryRaw<HourlyRow[]>`
           SELECT date_trunc('hour', timestamp) AS hour, COUNT(*)::int AS count
           FROM device_property_history
-          WHERE timestamp >= now() - interval '24 hours'
+          WHERE timestamp >= (now() AT TIME ZONE 'utc') - interval '24 hours'
           GROUP BY 1
           ORDER BY 1`,
       ]);
