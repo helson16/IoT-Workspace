@@ -455,6 +455,71 @@ export interface SecurityAuthLogItem {
   ip: string | null;
 }
 
+// ---------------- API Explorer(开发中心) ----------------
+
+export interface ApiParamDoc {
+  name: string;
+  type: "string" | "integer" | "object" | "array" | "enum";
+  description: string;
+  example?: string;
+  required?: boolean;
+}
+
+export interface ApiCatalogEntry {
+  id: string;
+  group: string;
+  name: string;
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  path: string;
+  description: string;
+  invocable: boolean;
+  pathParams?: ApiParamDoc[];
+  queryParams?: ApiParamDoc[];
+  bodyExample?: Record<string, unknown>;
+}
+
+export interface ApiGroupMeta {
+  key: string;
+  name: string;
+  description: string;
+}
+
+export interface ApiCatalogData {
+  groups: ApiGroupMeta[];
+  apis: ApiCatalogEntry[];
+  total: number;
+  invocable_count: number;
+}
+
+export interface InvokeResult {
+  api_id: string;
+  status_code: number;
+  duration_ms: number;
+  request_url: string;
+  response_body: unknown;
+}
+
+export interface ApiInvokeLogItem {
+  id: number;
+  api_id: string;
+  method: string;
+  path: string;
+  status_code: number;
+  duration_ms: number;
+  truncated: boolean;
+  time: string;
+}
+
+export interface ApiHistoryData {
+  items: ApiInvokeLogItem[];
+  stats: {
+    total_invokes: number;
+    success_count: number;
+    success_rate: number | null;
+    avg_duration_ms: number | null;
+  };
+}
+
 // ---------------- API 方法 ----------------
 
 export const api = {
@@ -670,4 +735,19 @@ export const api = {
       items: SecurityAuthLogItem[];
     }>(`/api/v1/security/auth-logs?${qs.toString()}`);
   },
+
+  // API Explorer(开发中心)
+  getApiCatalog: () => apiFetch<ApiCatalogData>("/api/v1/api-explorer/catalog"),
+  invokeApi: (input: {
+    api_id: string;
+    path_params?: Record<string, string>;
+    query_params?: Record<string, string>;
+    body?: Record<string, unknown> | null;
+  }) =>
+    apiFetch<InvokeResult>("/api/v1/api-explorer/invoke", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  getApiHistory: (limit = 20) =>
+    apiFetch<ApiHistoryData>(`/api/v1/api-explorer/history?limit=${limit}`),
 };

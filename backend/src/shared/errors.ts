@@ -108,6 +108,12 @@ export class ChartNotFoundError extends IotError {
   }
 }
 
+export class ApiNotFoundError extends IotError {
+  constructor(message: string, details?: ErrorDetail[]) {
+    super(message, 40405, 404, details);
+  }
+}
+
 export class ThingModelInvalidError extends IotError {
   constructor(message: string, details?: ErrorDetail[]) {
     super(message, 42201, 422, details);
