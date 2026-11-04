@@ -113,3 +113,22 @@ Stage Summary:
 - 数据流转闭环打通：sim-device → internal API → 物模型校验 → 影子/历史表 → 前端轮询渲染
 - 设计文档：.ai-docs/designs/frontend-backend-integration-design.md（含 7 项验收标准全部实测 PASS）
 - 服务运行：Next.js(:3000) + Fastify(:3200) + PG(:5432) + Redis(:6379) + 模拟器（5s 周期上报）
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: 后端单元测试补齐 + 物模型 Schema 缺陷修复
+
+Work Log:
+- 新增 backend/vitest.config.ts（内联空 PostCSS 配置）修复 vitest 启动向根目录搜索 postcss.config.mjs 导致的 "Invalid PostCSS Plugin" 崩溃
+- tests/unit/crypto.test.ts（12 用例）：设备密钥/ID 确定性、productId 格式、timingSafeEqual（含长度不等不抛异常）、MQTT clientId/username/password 拼装格式
+- tests/unit/validator.test.ts（23 用例）：validatePropertyValues 覆盖 int/float/string/bool/enum/timestamp 六类边界（min/max/非整数/NaN/maxLength/pattern/枚举越界/负时间戳）+ 未知 identifier 忽略 + 多错误聚合；validateDefinition 合法/非法/官方示例回归
+- tests/unit/shadow.service.test.ts（15 用例，内存 mock Prisma/Redis）：computeDelta 深比较、updateDesired 合并+版本递增+乐观锁冲突、updateReported 满足 desired 自动清除、getShadow cache-aside 二次命中不查库、clearDesired 重置
+- 修复循环 #1 发现并修复 schema 真实缺陷：backend-design/thing-model-schema.json 各 spec oneOf 分支缺少 additionalProperties:false，任意 spec 对象同时匹配多分支导致 validateDefinition 对官方示例（8 属性）100% 失败；为 NumSpec/StringSpec/BoolSpec/EnumSpec/TimestampSpec/StructSpec/ArraySpec 七个分支补充 additionalProperties:false 并添加官方示例+混杂字段两个回归用例
+- 修正测试断言：ShadowDocument.version = max(desiredVersion, reportedVersion) 而非单一递增
+- 50/50 用例通过；后端 tsc --noEmit 零错误；运行中服务冒烟（health + overview code=0）正常
+
+Stage Summary:
+- 测试覆盖三大纯逻辑模块：crypto（凭证）/ validator（物模型校验）/ shadow（影子状态机），共 50 用例
+- 发现并修复 validateDefinition 全量拒绝真实负载的 schema oneOf 缺陷（单测核心价值验证）
+- npm test 可重复执行，PostCSS 崩溃已消除
