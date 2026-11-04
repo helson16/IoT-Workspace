@@ -8,6 +8,8 @@ import type { ShadowDocument } from '../../src/types/index.js';
 
 interface ShadowRow {
   deviceId: string;
+  // updateDesired/clearDesired include device 关联用于 EMQX 下行推送, mock 须一并返回
+  device: { productId: string; deviceName: string };
   reported: Record<string, unknown>;
   desired: Record<string, unknown>;
   desiredVersion: number;
@@ -64,6 +66,7 @@ function makeService(rows: ShadowRow[]) {
 
 const baseRow: ShadowRow = {
   deviceId: 'dev-001',
+  device: { productId: 'prod-test0001', deviceName: 'test-device-01' },
   reported: { temperature: 25 },
   desired: {},
   desiredVersion: 0,
