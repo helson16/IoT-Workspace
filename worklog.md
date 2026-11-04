@@ -258,7 +258,7 @@ Stage Summary:
 
 ---
 Task ID: 14
-Agent: Main Agent
+Agent: Test Engineer Agent (TypeSafe)
 Task: TypeSafe 语义判断集成 — 自然语言 → 设备影子指令解析（后端端点，第 1 步）
 
 Work Log:
@@ -281,3 +281,63 @@ Stage Summary:
 - 核心结论: 模型只做语义判断、对错交给 code 的确定性校验; 三条阈值都不是安全边界只是分流器, 安全来自「候选集组装 + validateValue + 抽不到数值就澄清」三层
 - 教训: ① SDK 把 answers 声明成 total mapped type, 编译期承诺「每个问题都有答案」是虚假保证 —— 网络返回值该兜底还得兜底(少一个答案就是 TypeError → 500), 兜底方向统一取「多澄清」; ② 被 confidence 偶然拦下的用例不算安全, 要问「拦下它的理由」与「风险」是否同源, 同源就补结构性规则; ③ 单测绿 ≠ 真实数据已验证 — F-3 单测过了但实跑根本没触发(设备命名对不上)
 - 待办: F-1 根因(两个温度属性造成的属性歧义)未修, 只改了提示文案; 彻底修法(候选集带更强区分信息 / 对歧义属性二次确认)留待后续
+
+---
+Task ID: 15
+Agent: Test Engineer Agent (TypeSafe)
+Task: TypeSafe 工作流 — 双 Agent 协作与线程开关规范化
+
+Work Log:
+- 起因: 本仓库同时有平台开发 Agent(DA, worklog Task 2–13)与 TypeSafe 测试/验证 Agent(TA, Task 14)在动; 两边没有共享对话上下文, 能共享的只有仓库文件; 且 worklog 13 条 Agent 字段全是「Main Agent」, 分不出谁做的
+- 新增 .ai-docs/designs/typesafe/00-agent-protocol.md: 三份文件分工(STATUS 覆盖式 / worklog 只追加 / results 只放带证据的结论)、归属边界表、收尾 7 步清单、开工 5 步清单、7 条不变量及其守卫测试、worklog Agent 字段命名、阈值与用例表门槛规则
+- 新增 .ai-docs/designs/typesafe/STATUS.md: 覆盖式状态文件 —— 一句话现状 / 目标 / 已完成 / 未完成(7 项, 按优先级) / 下一步(具体到命令与文件) / 阻塞 / 给 DA 的请求 / 质量门最近实测 / 关键约束
+- 阈值门槛规则成文: 改任何一条阈值或增删问题都必须重跑 32 条用例表(单测覆盖不了真实分布); 不为"验证一下"随手打真实 API(有费用); 不改动开发库
+- 修正 worklog Task 14 的 Agent 字段: Main Agent → Test Engineer Agent (TypeSafe), 并确立两条身份的写法
+- README 加顶部指针(接手先读 STATUS)与两份新文件的索引行
+- 关键机制说明: 规范本身不会自动生效 —— 双方各自在私有记忆里放一条指向 STATUS.md 的指针, 新线程启动自动加载记忆 → 拿到入口 → 读现状与下一步, 这才是"无感恢复上下文"的实现
+
+Stage Summary:
+- 交付: 规则 1 篇 + 状态 1 篇 + README 索引更新 + worklog 身份修正
+- 两条主线: ① 与 DA 的信息同步(凡影响另一方必落文件; 没写进文件等于没发生); ② 线程收尾/开工规范(收尾 7 步 + 开工 5 步)
+- 暴露出的真实缺口(已写进 STATUS 未完成项第 1 条): 上一轮把跑表脚本 _cases.mts 删了却没留复现方式, 导致"改了阈值也没法重跑" —— 新规则要求跑表脚本进 backend/tools/
+- 下一步(交给下一个 TA 线程): 先跑质量门复现现状(预期 tsc 0 / 178 tests / lint 0 error), 再补用例表脚本到 backend/tools/
+
+---
+Task ID: 16
+Agent: Test Engineer Agent (TypeSafe)
+Task: TypeSafe 工作流 — 用例表脚本落回仓库 + 护栏归属改为可判
+
+Work Log:
+- 起因: STATUS 未完成项第 1 条 —— 上一轮把跑表脚本 _cases.mts 删了没留复现方式, 而协议 §8 要求「改任何一条阈值或增删问题都必须重跑 32 条用例表」, 规则没法执行
+- 新增 backend/tools/case-table.mts(32 条用例): 刻意做成**回归检查器**而不是打印器
+  - 上一轮结果文档的「护栏」列是从 hint 文本反推填充的(文档里为此写了两条免责说明, 怕 confidence 被误读); 本轮改为按 parse() 的守卫顺序、用从 service **静态导入**的同一批阈值推导 —— 脚本里不另写一份阈值, 否则两边各写一份就会用错的阈值推护栏且没人发现
+  - 断言三条不变量: ① 澄清时 proposed 必为 null(不允许"顺便给个建议值") ② 结构性护栏必须拦在取值解析之前(一次护栏用例只该消耗 1 次 API; 消耗 2 次说明守卫跑在了取值解析之后) ③ proposed 的键必须落在该产品可写属性集里(G1 提示注入的防御)
+  - 阈值标定区打印每条判断的**间隙 [最大值, 最小值]** 及阈值落点 —— 阈值落在间隙里才是安全的, 落在某侧取值里就是随时会翻转; F-4 当初就是这么标定出来的
+  - --dry-run 只列用例不打 API, --only=A2,B3 做定向复核, 断言不过退出码 1
+- 为让「哪条护栏拦下的」可判, 服务新增 meta.judgments(intent_actionable / mentions_timing / mentions_multiple / target_property_confidence): 加法、可选(未调模型就短路的路径没有该字段)
+  - 理由: 顶层 confidence 是**重载**的 —— 护栏命中时装的是"触发该护栏那个问题的置信度", 正常路径装的是属性置信度; 读表时一个数字分不清是"模型不确定选哪个属性"还是"用户要求改两个属性", 这正是上一轮护栏列只能靠 hint 反推的根因
+- 新增 2 条单测: ① judgments 摊开四个原始值(顶层 confidence 仍等于属性置信度) ② 短路路径(H1 无可写属性)不调模型且无 judgments
+- 协议 §8 补「重跑方式」命令块, 并写明脚本与 parse() 守卫顺序**必须一起改**(不同步则表里护栏列会静静地说谎); §3 归属表加 backend/tools/ 一行; §4 第 7 条补可复现判据(改一次阈值, 另一个人能否不问你就重跑出同一张表)
+- STATUS 按覆盖式规则整体重写: 未完成项第 1 条从"补脚本"变为"复核本轮未提交改动"
+
+Stage Summary:
+- 交付: backend/tools/case-table.mts(新建) + service 的 meta.judgments + 2 条单测 + 协议/STATUS 同步
+- 端点响应面有加法变更(meta.judgments), 已在 STATUS 的「给 DA 的请求」里写明: 前端要直接读 judgments, 不要从重载的 confidence 猜; 该字段可选, 要判空
+- ⚠️ 本轮改动**尚未跑质量门**, 脚本只做到"写完"没做到"跑通" —— dry-run 被 Bash 安全分类器挡下(非只读命令无法判定安全性); 预期 tsc 0 / 180 tests(79+2) / lint 0 error
+- 下一步(交给下一个 TA 线程): ① 跑质量门复核(预期 180) ② npx tsx --env-file=.env tools/case-table.mts --dry-run 跑通 ③ 实跑第 4 轮把输出贴回 results ④ 提交
+
+---
+Task ID: 17
+Agent: Test Engineer Agent (TypeSafe)
+Task: TypeSafe 工作流 — 线程收尾（未完成，卡在环境）
+
+Work Log:
+- 本轮收尾**没有做完**, 原因是环境而非工作内容: Bash 的非只读命令被安全分类器全程拒绝("deepseek-v4-flash is temporarily unavailable, so auto mode cannot determine the safety of Bash right now"), 只读命令可过。因此质量门、dry-run、git 提交三件事都执行不了
+- 用只读手段完成了力所能及的核对(等价于"静态验证"): 路由注册无 prefix 故 URL 正确; 测试 helper 签名(choiceAnswer(choice, confidence=0.92) / noulAnswer / makeDb(props) / makeClient 返回 {client, calls, systemOne})与新写的 2 条测试断言一致; 断言期望值 0.88 确实等于 base.confidence; 脚本的护栏推导顺序与 parse() 守卫顺序(intent → timing → multiple)逐条对齐
+- **纠正了 STATUS 里一处已经不成立的说法**: 原本写着"治理规范已提交", 但 git log 实测 HEAD 仍是 9e037db, 00-agent-protocol.md / STATUS.md / README.md / worklog Task 15 全都没提交成功 —— 与上一轮 .commit-msg.txt 那次一样, 命令给出去了但没执行
+- STATUS 据此重写: 明确工作区里有**两批**未提交改动(① 治理规范 ② 用例表脚本+meta.judgments), 并把收尾拆成 4 个机械步骤(质量门 → dry-run → 提交 → 实跑)附具体命令
+
+Stage Summary:
+- 交付: STATUS 纠正 + worklog 本条
+- **明确未完成**: 质量门未跑、脚本未跑通、两批改动未提交 —— 全部记在 STATUS 未完成项第 1 条, 含命令与预期值
+- 教训(值得写进协议): "命令给出去"不等于"命令执行了"。上一轮和这一轮各踩一次 —— 提交这类收尾动作, 要么自己看到输出, 要么在下一次开工的第一件事里用 `git log` 复核。协议 §5 开工清单本来就要求复核, 这次正是它起了作用

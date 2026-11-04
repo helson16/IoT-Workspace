@@ -1,5 +1,8 @@
 # TypeSafe 语义判断集成 — 方案索引
 
+> **接手这个工作流，先读 [`STATUS.md`](./STATUS.md)**（现在在哪 / 下一步做什么），
+> 再读 [`00-agent-protocol.md`](./00-agent-protocol.md)（双 Agent 协作与线程收尾规则）。
+
 > 现状：仓库内**没有任何 AI/LLM 集成**（`grep -riE "openai|anthropic|typesafe|llm|langchain"` 在 `src/` 与 `backend/src/` 全空）。
 > 所有"智能"目前都是硬编码阈值 + SQL 子串匹配。本目录收录在这些位置引入 TypeSafe
 > （System One / Jev）语义判断的方案。
@@ -30,6 +33,8 @@
 
 | 文件 | 内容 |
 |---|---|
+| [`STATUS.md`](./STATUS.md) | **当前状态 / 下一步 / 阻塞 / 质量门**（覆盖式，开工先读） |
+| [`00-agent-protocol.md`](./00-agent-protocol.md) | **双 Agent 协作与线程收尾规范**（归属边界、收尾与开工清单、不变量、门槛规则） |
 | [`01-nl-shadow-command-design.md`](./01-nl-shadow-command-design.md) | #1 完整设计方案 |
 | [`01-nl-shadow-command-test-cases.md`](./01-nl-shadow-command-test-cases.md) | #1 落地测试用例表（A–H 组） |
 | [`01-nl-shadow-command-test-results.md`](./01-nl-shadow-command-test-results.md) | **#1 用例表实测结果**（三轮真实 API：修复前基线 + 两次修复后重跑；模型版本、发现的问题 F-1–F-9、阈值标定依据） |

@@ -357,6 +357,41 @@ describe('正常路径', () => {
     expect(res.meta.candidate_count).toBe(5);
     expect(res.meta.value_spans).toEqual(['20']);
   });
+
+  it('meta.judgments 摊开四个原始判定值, 不再让 confidence 重载', async () => {
+    const { client } = makeClient([
+      {
+        intent_actionable: noulAnswer(0.95),
+        mentions_timing: noulAnswer(0.07),
+        mentions_multiple: noulAnswer(0.11),
+        target_property: choiceAnswer('target_temperature', 0.88),
+      },
+      { target_value: choiceAnswer('20') },
+    ]);
+    const svc = new CommandParseService(makeDb(), silentLogger, client);
+    const res = await svc.parse('dev-thermo-01', '把目标温度调到20度');
+
+    // 顶层 confidence 在这个用例里是 0.88 (属性置信度); 但护栏命中时它装的是
+    // 触发护栏那个问题的值 —— 两种含义压在一个字段上, 正是这里要拆掉的歧义。
+    expect(res.confidence).toBe(0.88);
+    expect(res.meta.judgments).toEqual({
+      intent_actionable: 0.95,
+      mentions_timing: 0.07,
+      mentions_multiple: 0.11,
+      target_property_confidence: 0.88,
+    });
+  });
+
+  it('未调用模型就短路时没有 judgments (H1 无可写属性)', async () => {
+    const readonlyOnly = PROPS.filter((p) => p.accessMode === 'r');
+    const { client, systemOne } = makeClient([{}]);
+    const svc = new CommandParseService(makeDb(readonlyOnly), silentLogger, client);
+    const res = await svc.parse('dev-thermo-01', '把目标温度调到20度');
+
+    expect(systemOne).not.toHaveBeenCalled();
+    expect(res.meta.judgments).toBeUndefined();
+    expect(res.needs_clarification).toBe(true);
+  });
 });
 
 // ============================================================
