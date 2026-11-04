@@ -596,3 +596,10 @@ Stage Summary:
 - AV 元数据链路端到端闭环: 模拟摄像头(幂等自注册) → internal 批量回调(校验+兜底文件名) → PG 持久化 → 统计/列表 API → 页面渲染
 - 顺手观察(未修, 待用户定夺): top-nav pageLabels 中 rule-engine 映射「安全认证」疑似历史遗留错标, 建议连同 message-queue 一并复核与侧边栏的对应关系
 - worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交
+
+Follow-up(标签映射修复, 用户批准):
+- 复核结论: rule-engine→「安全认证」实为正确映射(页面即 SecurityAuthPage, 文件名历史遗留), 上轮观察有误; 真实不一致共 6 处
+- top-nav 面包屑对齐侧边栏: 产品列表→产品管理 / 设备列表→设备管理 / 消息队列→消息通信 / 云端开发→开发中心 / 数据分析→云存服务 / 运维监控→监控运维
+- sidebar 错标修正: 设备接入组「固件升级」→「设备详情」(device-detail 页面实际为设备详情页)
+- 顺带清理 sidebar.tsx 7 个未使用 lucide 导入(Package/Workflow/Cloud/BarChart3/ScrollText/HardDrive/Server), IDE 面板归零
+- 验证: root tsc+lint 0; E2E 7/7 PASS(开发中心/消息通信/云存服务/监控运维面包屑一致, 设备接入子项无固件升级错标, 设备详情/安全认证正常, console 0 新错误)
