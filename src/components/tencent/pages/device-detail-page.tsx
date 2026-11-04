@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Cpu, Wifi, Calendar, RefreshCw, Send, Layers,
-  ChevronLeft, ChevronRight, Activity,
+  ChevronLeft, ChevronRight, Activity, Sparkles,
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
@@ -12,7 +12,7 @@ import {
 import {
   api, ApiError,
   type ShadowDocument, type TelemetryTrendSeries, type ThingModelSnapshot,
-  type DeviceLogType,
+  type DeviceLogType, type ParseCommandResult,
 } from "@/lib/api/client";
 import { useAppStore } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 const statusMap: Record<string, { label: string; color: string }> = {
   online: { label: "在线", color: "text-[#2BA471]" },
@@ -415,6 +416,9 @@ export function DeviceDetailPage() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [cmdInput, setCmdInput] = useState("");
   const [cmdMsg, setCmdMsg] = useState("");
+  const [activeTab, setActiveTab] = useState("nl");
+  const [nlInput, setNlInput] = useState("");
+  const [parseResult, setParseResult] = useState<ParseCommandResult | null>(null);
 
   const { data: device, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["device", selectedDeviceId],
@@ -438,14 +442,33 @@ export function DeviceDetailPage() {
 
   const desiredMutation = useMutation({
     mutationFn: (desired: Record<string, unknown>) =>
-      api.updateShadowDesired(selectedDeviceId!, desired, shadow?.version ?? 0),
+      // 乐观锁字段是 desiredVersion (desired 专属), 不是总 version (随上报递增)
+      api.updateShadowDesired(selectedDeviceId!, desired, shadow?.desiredVersion ?? 0),
     onSuccess: () => {
       setCmdMsg("✓ 期望状态已下发, 等待设备同步");
       queryClient.invalidateQueries({ queryKey: ["shadow", selectedDeviceId] });
-      setTimeout(() => { setCmdMsg(""); setCmdOpen(false); setCmdInput(""); }, 1500);
+      setTimeout(() => {
+        setCmdMsg("");
+        setCmdOpen(false);
+        setCmdInput("");
+        setParseResult(null);
+        setNlInput("");
+      }, 1500);
     },
     onError: (e: Error) => setCmdMsg("✗ 下发失败: " + (e instanceof ApiError ? e.message : e.message)),
   });
+
+  // 自然语言 → command:parse 解析 (契约: 502/50003=上游故障; needs_clarification 非错误)
+  const parseMutation = useMutation({
+    mutationFn: (text: string) => api.parseDeviceCommand(selectedDeviceId!, text),
+    onSuccess: (data) => setParseResult(data),
+  });
+
+  const handleParse = () => {
+    const text = nlInput.trim();
+    if (!text || parseMutation.isPending) return;
+    parseMutation.mutate(text);
+  };
 
   if (isLoading) {
     return (
@@ -547,7 +570,7 @@ export function DeviceDetailPage() {
               <RefreshCw className="w-3.5 h-3.5" /> 刷新
             </Button>
             <Button
-              onClick={() => { setCmdOpen(true); setCmdMsg(""); }}
+              onClick={() => { setCmdOpen(true); setCmdMsg(""); setParseResult(null); }}
               className="h-8 px-4 bg-[#0052D9] hover:bg-[#0042B0] text-white text-[13px] gap-1.5"
             >
               <Send className="w-3.5 h-3.5" /> 下发指令
@@ -606,41 +629,144 @@ export function DeviceDetailPage() {
 
       {/* Send Command Dialog (shadow desired 下发) */}
       <Dialog open={cmdOpen} onOpenChange={setCmdOpen}>
-        <DialogContent className="sm:max-w-[440px]">
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle className="text-[16px] text-[#333]">下发指令 (影子期望状态)</DialogTitle>
           </DialogHeader>
-          <div className="py-2">
-            <label className="block text-[13px] text-[#666] mb-1.5">
-              期望属性 (JSON 对象, 将写入设备影子 desired)
-            </label>
-            <Input
-              value={cmdInput}
-              onChange={(e) => setCmdInput(e.target.value)}
-              placeholder='如：{"target_temperature": 20, "power_switch": 1}'
-              className="h-8 text-[13px] font-mono"
-              onKeyDown={(e) => e.key === "Enter" && sendCommand()}
-            />
-            {cmdMsg && (
-              <div className={cn(
-                "text-[12px] mt-2 rounded px-3 py-2",
-                cmdMsg.startsWith("✓") ? "text-[#2BA471] bg-[#E8F8F0]" : "text-[#E34D59] bg-[#FDECEE]"
-              )}>
-                {cmdMsg}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="py-2">
+            <TabsList className="w-full text-[13px]">
+              <TabsTrigger value="nl" className="gap-1.5 flex-1">
+                <Sparkles className="w-3.5 h-3.5" /> 智能指令
+              </TabsTrigger>
+              <TabsTrigger value="json" className="flex-1">JSON</TabsTrigger>
+            </TabsList>
+
+            {/* 智能指令: 自然语言 → 解析 → 人工确认 → 下发 */}
+            <TabsContent value="nl" className="mt-3 space-y-3">
+              <div className="flex gap-2">
+                <Input
+                  value={nlInput}
+                  onChange={(e) => { setNlInput(e.target.value); setParseResult(null); }}
+                  placeholder="如: 把目标温度调到25度"
+                  className="h-8 text-[13px] flex-1"
+                  onKeyDown={(e) => e.key === "Enter" && handleParse()}
+                />
+                <Button
+                  onClick={handleParse}
+                  disabled={parseMutation.isPending || !nlInput.trim()}
+                  className="h-8 px-4 bg-[#0052D9] hover:bg-[#0042B0] text-white text-[13px]"
+                >
+                  {parseMutation.isPending ? "解析中..." : "解析"}
+                </Button>
               </div>
-            )}
-          </div>
+
+              {parseMutation.isPending && (
+                <div className="text-[12px] text-[#BBBFC4] rounded px-3 py-2 bg-[#F3F4F6] animate-pulse">
+                  正在解析指令...
+                </div>
+              )}
+
+              {parseMutation.isError && (() => {
+                const e = parseMutation.error as Error;
+                const upstream = e instanceof ApiError && e.code === 50003;
+                return (
+                  <div className={cn(
+                    "text-[12px] rounded px-3 py-2",
+                    upstream ? "text-[#0052D9] bg-[#E6F0FF]" : "text-[#E34D59] bg-[#FDECEE]",
+                  )}>
+                    {upstream ? "解析服务暂时不可用, 请稍后重试" : `✗ 解析失败: ${e.message}`}
+                  </div>
+                );
+              })()}
+
+              {parseResult && parseResult.proposed && (
+                <div className="rounded border border-[#D5E3FF] bg-[#F0F5FF] p-3 space-y-2.5">
+                  <div className="text-[13px] text-[#333] leading-relaxed">{parseResult.explanation}</div>
+                  <div className="rounded bg-white border border-[#E5E6EB] divide-y divide-[#F3F4F6]">
+                    {Object.entries(parseResult.proposed).map(([id, v]) => {
+                      const m = propMetaMap.get(id);
+                      return (
+                        <div key={id} className="flex items-center justify-between px-3 py-2 text-[13px]">
+                          <span className="text-[#666]">
+                            {m?.name ?? id}
+                            <span className="text-[11px] text-[#BBBFC4] ml-1.5 font-mono">{id}</span>
+                          </span>
+                          <span className="font-medium text-[#333]">
+                            {String(v)}
+                            {m?.unit && <span className="text-[#888] ml-0.5 font-normal">{m.unit}</span>}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-[#BBBFC4]">
+                      {parseResult.meta.judgments
+                        ? `属性置信度 ${(parseResult.meta.judgments.target_property_confidence * 100).toFixed(0)}%`
+                        : ""}
+                    </span>
+                    <Button
+                      onClick={() => desiredMutation.mutate(parseResult.proposed!)}
+                      disabled={desiredMutation.isPending}
+                      className="h-8 px-4 bg-[#0052D9] hover:bg-[#0042B0] text-white text-[13px]"
+                    >
+                      {desiredMutation.isPending ? "下发中..." : "确认下发"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {parseResult && !parseResult.proposed && (
+                <div className={cn(
+                  "text-[12px] rounded px-3 py-2",
+                  parseResult.needs_clarification
+                    ? "text-[#0052D9] bg-[#E6F0FF]"
+                    : "text-[#888] bg-[#F3F4F6]",
+                )}>
+                  {parseResult.needs_clarification
+                    ? (parseResult.hint ?? "请补充更明确的指令")
+                    : "未能解析出可下发的属性"}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* JSON: 直接编辑 desired */}
+            <TabsContent value="json" className="mt-3">
+              <label className="block text-[13px] text-[#666] mb-1.5">
+                期望属性 (JSON 对象, 将写入设备影子 desired)
+              </label>
+              <Input
+                value={cmdInput}
+                onChange={(e) => setCmdInput(e.target.value)}
+                placeholder='如：{"target_temperature": 20, "power_switch": 1}'
+                className="h-8 text-[13px] font-mono"
+                onKeyDown={(e) => e.key === "Enter" && sendCommand()}
+              />
+            </TabsContent>
+          </Tabs>
+
+          {cmdMsg && (
+            <div className={cn(
+              "text-[12px] rounded px-3 py-2",
+              cmdMsg.startsWith("✓") ? "text-[#2BA471] bg-[#E8F8F0]" : "text-[#E34D59] bg-[#FDECEE]"
+            )}>
+              {cmdMsg}
+            </div>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setCmdOpen(false)} className="h-8 text-[13px]">
               取消
             </Button>
-            <Button
-              onClick={sendCommand}
-              disabled={desiredMutation.isPending}
-              className="h-8 px-4 bg-[#0052D9] hover:bg-[#0042B0] text-white text-[13px]"
-            >
-              {desiredMutation.isPending ? "下发中..." : "发送"}
-            </Button>
+            {activeTab === "json" && (
+              <Button
+                onClick={sendCommand}
+                disabled={desiredMutation.isPending}
+                className="h-8 px-4 bg-[#0052D9] hover:bg-[#0042B0] text-white text-[13px]"
+              >
+                {desiredMutation.isPending ? "下发中..." : "发送"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

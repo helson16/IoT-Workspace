@@ -44,7 +44,9 @@ export class ShadowService {
     try {
       const cached = await this.redisHelper.getShadowCache(deviceId);
       if (cached) {
-        return JSON.parse(cached) as ShadowDocument;
+        // 旧缓存可能没有 desiredVersion 字段 (2026-10-13 加入), 缺失时按 0 兜底, TTL 过期后自然刷新
+        const doc = JSON.parse(cached) as ShadowDocument;
+        return { ...doc, desiredVersion: doc.desiredVersion ?? 0 };
       }
     } catch {
       // Cache miss or Redis error — fall through to DB
@@ -82,6 +84,7 @@ export class ShadowService {
         desired: metadata.desired ?? {},
       },
       version,
+      desiredVersion: shadow.desiredVersion,
       timestamp: Date.now(),
     };
 
@@ -176,6 +179,7 @@ export class ShadowService {
         desired: (updated.metadata as unknown as ShadowMetadata).desired ?? {},
       },
       version,
+      desiredVersion: newDesiredVersion,
       timestamp: now,
     };
 
@@ -269,6 +273,7 @@ export class ShadowService {
         desired: (updated.metadata as unknown as ShadowMetadata).desired ?? {},
       },
       version,
+      desiredVersion: updated.desiredVersion,
       timestamp: now,
     };
 
