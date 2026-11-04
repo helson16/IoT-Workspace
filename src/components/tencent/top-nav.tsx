@@ -12,7 +12,7 @@ const pageLabels: Record<string, string> = {
   "product-list": "产品列表",
   "product-define": "产品定义",
   "message-queue": "消息队列",
-  "rule-engine": "规则引擎",
+  "rule-engine": "安全认证",
   "cloud-dev": "云端开发",
   "data-analysis": "数据分析",
   "log-service": "日志服务",

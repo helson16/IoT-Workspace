@@ -528,3 +528,27 @@ Stage Summary:
   注意当时的处理: 记「未跑」+ 给一条可复制的补跑命令, **没有**拿上一次的值冒充这一次
 - dry-run 本轮未重跑(未改 `case-table.mts`, 也未改它 import 的任何东西), 最近一次仍是退出码 0 / 32 条
 
+
+---
+Task ID: 14
+Agent: Main Agent
+Task: 安全认证页（设备凭证管理 + 认证记录流）接入真实数据
+
+Work Log:
+- 环境重启: PG/Redis 经 brew services 拉起(Redis 因 redisbloom 模块缺执行权限启动失败, chmod +x 修复); 前后端/模拟器后台进程方式重启
+- 设计文档 .ai-docs/designs/security-auth-design.md: 侧边栏「安全」(rule-engine key)由 mock 转发规则页重写为安全认证页(转发规则域已由消息通信页真实覆盖)
+- 后端: Prisma 新增 DeviceAuthLog 模型(device_auth_logs 表, db push); security.service.ts(纯函数 maskSecret/buildSecurityStats/normalizeLogFilter + SecurityService 六方法 + recordAuthLog 埋点 helper 吞错不阻断); security.routes.ts 六端点(stats/credentials/credential/:id/rotate/status/auth-logs, JWT 全局保护)
+- 认证埋点: auth.routes.ts device-token 成功/失败双路径(deviceId 用确定性 sha256 generateDeviceId 推导); internal.routes.ts mqtt-connect 四出口(不存在/disabled/密钥不匹配/成功); 成功路径顺带写 lastIp; DeviceAuthInput 增可选 ip
+- **发现并修复真实缺陷**: MQTT auth hook PRODUCT_ID_LEN 误写 11(generateProductId 实为 prod-+8hex=13 字符), username 解析错位导致 EMQX 认证必败 401 —— 修复后正确密钥 200/错误密钥 401, 缺陷存在期的 2 条错位日志已清理
+- 禁用/启用语义: disable → disabled + 清 Redis 在线标记; enable → offline(需重新认证上线); 已验证 disabled 设备走 mqtt/auth 返回 403 被拒
+- 前端: client.ts 增 6 方法 + 6 类型; rule-engine-page.tsx 全量重写为 SecurityAuthPage(4 统计卡/设备凭证表/认证记录表双 Tab/查看密钥-轮换-禁用三个 Dialog/CopyRow 复制); top-nav 面包屑「规则引擎」→「安全认证」; globals.css 增 tc-link-btn 工具类; page.tsx 映射更新
+- vitest.config.ts 增 JWT_SECRET 测试环境变量(security.service 传递依赖 config 的 import 期检查)
+- 质量门: root tsc+lint 0; backend typecheck 0; npm test 208/208(新增 security.service.test.ts 25 用例: maskSecret 4/buildSecurityStats 4/normalizeLogFilter 7/recordAuthLog 3/SecurityService 7)
+- E2E 12/12 PASS(浏览器): 面包屑/统计卡真实数值(12 台/6 在线)/凭证表 12 行脱敏密钥/查看密钥与 DB 一致/轮换后新密钥 9b5c47cf 与 DB 核验一致/禁用→红点+统计卡联动/认证记录多类型含失败筛选/启用恢复离线; console 0 错误(仅 React DevTools 与 HMR info)
+- DB 核验: device_auth_logs 审计链完整(secret-rotate/status-change/mqtt-connect failure 含禁用拒绝记录)
+
+Stage Summary:
+- 安全认证页成为第 10 个真实数据页面; 剩余 mock: 开发中心(cloud-dev)/音视频服务(log-service)
+- 修复 EMQX 认证 hook 的 productId 截断缺陷(11→13), 该缺陷使 EMQX 真实接入时认证必然失败
+- known issue(记录不修): internal online/property-report 回调不拦截 disabled 设备(被禁用的活跃设备会被回调置回 online), 属另一安全域问题
+- 附带: authenticate() 与 mqtt auth hook 现均记录 lastIp; worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交

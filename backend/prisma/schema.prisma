@@ -276,3 +276,24 @@ model ForwardLog {
   @@index([result], map: "idx_fwd_logs_result")
   @@map("forward_logs")
 }
+
+// ============================================================
+// 12. 设备认证日志表 (Device Auth Logs)
+// ============================================================
+model DeviceAuthLog {
+  id          Int      @id @default(autoincrement())
+  deviceId    String   @map("device_id") @db.VarChar(128)
+  deviceName  String   @map("device_name") @db.VarChar(128)
+  productId   String   @map("product_id") @db.VarChar(64)
+  productName String   @map("product_name") @db.VarChar(128)
+  authType    String   @map("auth_type") @db.VarChar(32) // device-token | mqtt-connect | secret-rotate | status-change
+  result      String   @db.VarChar(16) // success | failure
+  reason      String?  @db.VarChar(256)
+  ip          String?  @db.VarChar(45)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([deviceId, createdAt(sort: Desc)], map: "idx_auth_logs_device")
+  @@index([createdAt(sort: Desc)], map: "idx_auth_logs_created")
+  @@index([authType], map: "idx_auth_logs_type")
+  @@map("device_auth_logs")
+}
