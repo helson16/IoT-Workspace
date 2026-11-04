@@ -87,6 +87,7 @@
 | 5 | 路由必须是正则参数 `:action(command:parse)`；裸写会被 find-my-way 当成"静态前缀 + 名为 parse 的参数"，吞掉兄弟路由 | 路由注册用例 |
 | 6 | `TYPESAFE_API_KEY` 只在 `backend/.env`，`src/` 里只准读 `process.env` | §4 第 6 条 |
 | 7 | 不开 `TYPESAFE_LOG_LEVEL=debug` —— SDK 打印**未脱敏**请求体，物模型 + 用户原话会进日志 | 人工检查 |
+| 8 | **上游/外部依赖的错误必须翻译成受控错误**：对外固定文案 + 稳定错误码，**不透传 `err.message`**（里面装着上游响应体，实测含出口 IP）；且**凡是对外发出的 5xx，服务端必须留下日志** —— `app.ts` 的 `IotError` 分支不打日志，所以日志只能在翻译处写 | 单测 T1/T2/T3（上游 reject → `UpstreamServiceError` 502/50003，`toResponse()` 不含上游内容，日志里有原始错误）；上游拒绝时**返回 502 是正确行为**，缺陷是"未捕获的 500 + 回显上游内容" |
 
 ## 7. worklog 的 `Agent:` 字段
 
