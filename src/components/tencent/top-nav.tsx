@@ -7,16 +7,16 @@ import { cn } from "@/lib/utils";
 
 const pageLabels: Record<string, string> = {
   overview: "概览",
-  "device-list": "设备列表",
+  "device-list": "设备管理",
   "device-groups": "设备分组",
-  "product-list": "产品列表",
+  "product-list": "产品管理",
   "product-define": "产品定义",
-  "message-queue": "消息队列",
+  "message-queue": "消息通信",
   "rule-engine": "安全认证",
-  "cloud-dev": "云端开发",
-  "data-analysis": "数据分析",
+  "cloud-dev": "开发中心",
+  "data-analysis": "云存服务",
   "log-service": "音视频服务",
-  "ops-monitor": "运维监控",
+  "ops-monitor": "监控运维",
   "device-detail": "设备详情",
 };
 

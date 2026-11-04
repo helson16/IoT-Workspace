@@ -2,11 +2,10 @@
 
 import { useCallback, useState } from "react";
 import {
-  LayoutDashboard, Cpu, Package, FileCode2,
-  MessageSquare, Workflow, Cloud, BarChart3,
-  ScrollText, Activity, Shield, Database,
-  HardDrive, Video, ChevronDown, ChevronRight,
-  PanelLeftClose, PanelLeft, Server,
+  LayoutDashboard, Cpu, FileCode2,
+  MessageSquare, Activity, Shield, Database,
+  Video, ChevronDown, ChevronRight,
+  PanelLeftClose, PanelLeft,
 } from "lucide-react";
 import { useAppStore, type PageKey } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
@@ -27,7 +26,7 @@ const menuItems: MenuItem[] = [
       { key: "product-list", label: "产品管理" },
       { key: "device-list", label: "设备管理" },
       { key: "device-groups", label: "设备分组" },
-      { key: "device-detail", label: "固件升级" },
+      { key: "device-detail", label: "设备详情" },
     ],
   },
   { key: "cloud-dev", label: "开发中心", icon: <FileCode2 className="w-4 h-4" /> },
