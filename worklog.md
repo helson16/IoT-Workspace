@@ -382,3 +382,56 @@ Stage Summary:
 - 真实缺口(非本轮引入, 但本轮首次可见): 端点对上游故障**完全没有错误处理**。
   这是"跑真实 API 的用例表"才照出来的东西 —— 单测全绿(180 passed)也照不出来, 因为单测里 client 是打桩的。
   值得记一条: **打桩测试覆盖不了"上游拒绝服务"这一整类路径**。
+
+---
+
+Task ID: 19
+Agent: Test Engineer Agent (TypeSafe)
+Task: TypeSafe 工作流 — 修 F-10（上游故障翻译为 502/50003, 不再回显上游响应体）
+
+Work Log:
+- 按 STATUS「下一步」第 1 条动手: 先 F-10, 再 G5 期望值。开工先读 STATUS 与 results §3 的 F-10 条目
+- **决策（用户选定, 未擅自定）**: ① 上游故障形态 = **HTTP 502 + code 50003**, 文案
+  `解析服务暂时不可用, 请稍后重试`; ② 缺 `TYPESAFE_API_KEY` 那条路径（原 `ValidationError` 400/40001）**一并修**,
+  归入同一类, 文案 `解析服务未配置, 请联系管理员`。`50003`/`502` 改动前已确认未被占用
+- **改动**（`src/services/command-parse.service.ts` 为主）:
+  - `shared/errors.ts` 新增 `UpstreamServiceError`(50003/502), 沿用 `MqttBrokerError` 的写法
+  - 新增私有 `callUpstream<T>(run)`, **两个 SDK 调用点都包住**（第一问 + 取值解析第二问）。
+    用 thunk 而非 `(params, options)`: T 由调用点推断, 不必去抠 SDK systemOne 的泛型签名
+  - `instanceof IotError` **原样透出** —— 否则 `getClient()` 那条"未配置"会被兜底盖成"暂时不可用", 诊断信息丢失
+  - `ParseLogger` 增加**必填** `error`; 服务在翻译处写日志
+  - 日志用显式 `errName/errMessage/errStack` 而非 pino 惯例的 `{ err }`: **`Error` 属性不可枚举**,
+    服务的自定义 `consoleLogger` 是 `JSON.stringify(obj)`, 写 `{ err }` 会打成 `{"err":{}}` —— 静默丢消息
+  - `command-parse.routes.ts` 补 `error:` 接线（必填后不补就编译失败）; handler 本身不改 —— IotError 由 app.ts 正确映射
+- **两个必须改、否则会坏的地方（读代码才发现, 不在原计划里）**:
+  - `ValidationError` 在本文件**只有** `getClient()` 一处使用, 改完即成未使用导入 → **lint 会报错**, 必须换掉
+  - `tests/` 里 `ParseLogger` 夹具共 **3 处**（不止 `silentLogger`）: 76 / 628 / 713 行
+- **关键设计约束（本条的核心）**: `app.ts` 的 IotError 分支**不打日志**（只有兜底分支打）——
+  所以把错误翻译成 IotError 之后, 真实失败原因**只存在于服务层这一条日志里**。
+  翻译时省掉日志 = 修好了泄露却把可观测性一起丢掉。已写进协议 §6 不变量 8
+- **单测新增 3 条**（`上游故障 (F-10)`）: T1 第一问被拒 / T2 第二问被拒 / T3 缺 key。
+  断言 `code`/`statusCode`、`toResponse()` 不含 `DOCTYPE`/`cloudflare`/`Ray ID`/`154.21.95.7`,
+  且日志里**有**出口 IP（证明"原始错误只进服务端日志"没被一起丢掉）。
+  环境变量用 save/restore 而非 `vi.stubEnv`, 不依赖 vitest 版本
+- **质量门（实测, 非引用）**: `npm run typecheck; npm test; npm run lint`
+  → `tsc` 0 error ｜ **183 passed (6 files)**, command-parse.test.ts **81 → 84** ｜ `lint` 0 error / 109 warning。
+  与动手前给的预期值逐项吻合
+- **订正了原修法候选③的措辞**: results §3 原写"上游报错时端点**不返回 5xx**"——
+  经决策后**正确行为恰恰是返回 502**。5xx 本身不是缺陷, 缺陷是"**未捕获**的 500 + **回显上游内容**"。
+  已改写成按新形态断言
+- **教训（操作层, 值得记）**: 我把命令块连同 `!` 前缀一起贴给用户, 用户原样粘贴 → shell 把行首 `!`
+  当作**取反运算符**（POSIX 语法 `! cmd` 反转退出码）, 于是 dry-run 的 `EXIT=1` 是**假信号**;
+  且那一跑的表格输出没被捕获。**给用户的命令要贴不含 `!` 的正文, 让 `!` 由用户自己敲**
+- **环境问题第 5 次出现**: Bash 非只读命令再被安全分类器整体挡下（typecheck/test/lint/tsx 全挡住,
+  grep/sed/cat 等只读命令可过）。本轮靠用户用 `!` 直接执行才跑成质量门
+
+Stage Summary:
+- 交付: F-10 修复（`UpstreamServiceError` + `callUpstream` + 两个调用点 + logger `error` + 路由接线）、
+  3 条单测、协议 §6 不变量 8、results §3 的 F-10 改写（含候选③订正）
+- 状态: 质量门实测通过（183 / 0 error / 0 error）; **提交尚未做**（分类器挡住 git, 待用户执行或环境恢复）
+- **dry-run 本轮未取得可信结果**: 脚本本轮**未改动**, 但那一跑的退出码被行首 `!` 反转, 输出未捕获 ——
+  记在这里, **不得据"EXIT=1"推断脚本坏了**。脚本本身仍是上一轮实测过的退出码 0
+- 已知验证缺口（已写进 results 与 STATUS）: `tests/` 无 HTTP 夹具, "服务抛 IotError → 路由吐 502/50003"
+  这段接线**无自动化覆盖**; 端到端形状由下一轮 G5 实跑给出
+- **下一步**: ① 决定 G5 期望值（环境性跳过 vs 换输入）—— F-10 修好后它才知道该断言什么
+  ② 之后 F-1 → F-7 → F-9 → F-5
