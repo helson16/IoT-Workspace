@@ -59,6 +59,7 @@ model Device {
   propertyHistory DevicePropertyHistory[]
   eventLogs       DeviceEventLog[]
   actionLogs      DeviceActionLog[]
+  avLogs          AvEventLog[]
 
   @@unique([productId, deviceName], name: "uq_device_product_name")
   @@index([productId], map: "idx_devices_product_id")
@@ -315,4 +316,29 @@ model ApiInvokeLog {
 
   @@index([createdAt(sort: Desc)], map: "idx_api_invoke_created")
   @@map("api_invoke_logs")
+}
+
+// ============================================================
+// 14. 音视频事件记录表 (AV Event Logs)
+// ============================================================
+// 摄像头设备上报的录制/截图/回放事件元数据(仅元数据, 无真实视频流):
+// 与 device_event_logs(物模型事件)分表, 供音视频服务页消费。
+model AvEventLog {
+  id             BigInt   @id @default(autoincrement())
+  deviceId       String   @map("device_id") @db.VarChar(128)
+  eventType      String   @map("event_type") @db.VarChar(32) // recording | snapshot | playback
+  status         String   @db.VarChar(16) // success | failed
+  fileName       String?  @map("file_name") @db.VarChar(255)
+  fileSize       Int      @default(0) @map("file_size") // bytes
+  durationSec    Int      @default(0) @map("duration_sec") // 秒(录制/回放), 截图恒为 0
+  streamProtocol String   @default("RTMP") @map("stream_protocol") @db.VarChar(16) // RTMP | HLS | WebRTC
+  detail         Json     @default("{}")
+  timestamp      DateTime @default(now())
+
+  device         Device   @relation(fields: [deviceId], references: [deviceId], onDelete: Cascade)
+
+  @@index([deviceId, timestamp(sort: Desc)], map: "idx_av_logs_device_ts")
+  @@index([eventType], map: "idx_av_logs_type")
+  @@index([timestamp(sort: Desc)], map: "idx_av_logs_ts")
+  @@map("av_event_logs")
 }

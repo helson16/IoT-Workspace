@@ -520,6 +520,43 @@ export interface ApiHistoryData {
   };
 }
 
+// ---------------- 音视频服务 ----------------
+
+export interface AvStats {
+  total_events: number;
+  today_recording: number;
+  today_snapshot: number;
+  today_playback: number;
+  today_events: number;
+  storage_bytes: number;
+  today_duration_sec: number;
+  success_rate: number | null; // 0-1, null = 无事件
+  device_count: number;
+}
+
+export interface AvEventItem {
+  id: string;
+  device_id: string;
+  device_name: string;
+  product_name: string;
+  event_type: "recording" | "snapshot" | "playback";
+  status: "success" | "failed";
+  file_name: string | null;
+  file_size: number;
+  duration_sec: number;
+  stream_protocol: string;
+  timestamp: string;
+}
+
+export interface AvEventQuery {
+  event_type?: "all" | "recording" | "snapshot" | "playback";
+  status?: "all" | "success" | "failed";
+  device_id?: string;
+  keyword?: string;
+  page?: number;
+  page_size?: number;
+}
+
 // ---------------- API 方法 ----------------
 
 export const api = {
@@ -750,4 +787,23 @@ export const api = {
     }),
   getApiHistory: (limit = 20) =>
     apiFetch<ApiHistoryData>(`/api/v1/api-explorer/history?limit=${limit}`),
+
+  // 音视频服务
+  getAvStats: () => apiFetch<AvStats>("/api/v1/av/stats"),
+  getAvEvents: (query: AvEventQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.event_type) params.set("event_type", query.event_type);
+    if (query.status) params.set("status", query.status);
+    if (query.device_id) params.set("device_id", query.device_id);
+    if (query.keyword) params.set("keyword", query.keyword);
+    if (query.page) params.set("page", String(query.page));
+    if (query.page_size) params.set("page_size", String(query.page_size));
+    const qs = params.toString();
+    return apiFetch<{
+      total: number;
+      page: number;
+      page_size: number;
+      items: AvEventItem[];
+    }>(`/api/v1/av/events${qs ? `?${qs}` : ""}`);
+  },
 };

@@ -15,7 +15,7 @@ const pageLabels: Record<string, string> = {
   "rule-engine": "安全认证",
   "cloud-dev": "云端开发",
   "data-analysis": "数据分析",
-  "log-service": "日志服务",
+  "log-service": "音视频服务",
   "ops-monitor": "运维监控",
   "device-detail": "设备详情",
 };
