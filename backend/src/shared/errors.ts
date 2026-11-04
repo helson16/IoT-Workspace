@@ -90,6 +90,18 @@ export class GroupNameConflictError extends IotError {
   }
 }
 
+export class RuleNotFoundError extends IotError {
+  constructor(message: string, details?: ErrorDetail[]) {
+    super(message, 40404, 404, details);
+  }
+}
+
+export class RuleNameConflictError extends IotError {
+  constructor(message: string, details?: ErrorDetail[]) {
+    super(message, 40904, 409, details);
+  }
+}
+
 export class ThingModelInvalidError extends IotError {
   constructor(message: string, details?: ErrorDetail[]) {
     super(message, 42201, 422, details);

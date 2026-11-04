@@ -233,3 +233,46 @@ model DeviceActionLog {
   @@index([callId], map: "idx_action_logs_call_id")
   @@map("device_action_logs")
 }
+
+// ============================================================
+// 10. 消息转发规则表 (Forward Rules)
+// ============================================================
+model ForwardRule {
+  id           String   @id @default(cuid())
+  name         String   @unique @db.VarChar(64)
+  description  String?
+  status       String   @default("enabled") @db.VarChar(16) // enabled | disabled
+  productId    String   @map("product_id") @db.VarChar(64)
+  messageType  String   @map("message_type") @db.VarChar(16) // property | event
+  filter       Json     @default("{}") // { identifiers?: string[], eventTypes?: string[] }
+  targetType   String   @map("target_type") @db.VarChar(16) // http | republish
+  targetConfig Json     @default("{}") @map("target_config") // http:{url} | republish:{topic}
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([productId], map: "idx_fwd_rules_product")
+  @@index([status], map: "idx_fwd_rules_status")
+  @@map("forward_rules")
+}
+
+// ============================================================
+// 11. 消息转发日志表 (Forward Logs)
+// ============================================================
+model ForwardLog {
+  id          BigInt   @id @default(autoincrement())
+  ruleId      String   @map("rule_id") @db.VarChar(64)
+  ruleName    String   @map("rule_name") @db.VarChar(64)
+  deviceId    String   @map("device_id") @db.VarChar(128)
+  messageType String   @map("message_type") @db.VarChar(16) // property | event
+  topic       String   @db.VarChar(255)
+  payload     Json     @default("{}")
+  result      String   @db.VarChar(16) // success | failed
+  errorMsg    String?  @map("error_msg")
+  latencyMs   Int      @map("latency_ms")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([ruleId, createdAt(sort: Desc)], map: "idx_fwd_logs_rule_ts")
+  @@index([createdAt(sort: Desc)], map: "idx_fwd_logs_ts")
+  @@index([result], map: "idx_fwd_logs_result")
+  @@map("forward_logs")
+}

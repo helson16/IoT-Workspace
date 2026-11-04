@@ -17,6 +17,7 @@ import internalRoutes from './routes/internal.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import deviceGroupRoutes from './routes/device-group.routes.js';
 import opsRoutes from './routes/ops.routes.js';
+import ruleRoutes from './routes/rule.routes.js';
 
 const fastify = Fastify({
   logger: {
@@ -48,6 +49,10 @@ await fastify.register(jwt, {
 await fastify.register(rateLimit, {
   max: 100,
   timeWindow: '1 minute',
+  // 内部链路(EMQX webhook / 设备模拟器 / 规则引擎转发回环)不受 IP 限流约束:
+  // 其自身已有 X-Internal-Secret 鉴权, 且 dev 环境全部流量来自 127.0.0.1 同一桶,
+  // 规则引擎转发会成倍放大请求数, 不豁免将误伤上报主链路。
+  allowList: (request) => request.url.startsWith('/api/internal/'),
 });
 
 await fastify.register(prismaPlugin);
@@ -148,5 +153,6 @@ await fastify.register(internalRoutes);
 await fastify.register(statsRoutes);
 await fastify.register(deviceGroupRoutes);
 await fastify.register(opsRoutes);
+await fastify.register(ruleRoutes);
 
 export default fastify;
