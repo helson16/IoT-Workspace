@@ -232,3 +232,26 @@ Stage Summary:
 - 质量门: lint 0 / 双端 tsc 0 / 75 单测通过(新增 21)
 - 消息通信成为第 8 个真实数据页面; 规则引擎完整闭环: 上报→匹配→转发→日志→展示
 - 教训: ① prisma generate 后 IDE TS server 缓存滞后报「模型不存在」假错, 以 CLI tsc 为 ground truth; ② 原生 SQL 必须先 \d 确认实际列名再写; ③ 新增内部回环流量前先审视 rate limit 单桶容量
+
+---
+Task ID: 13
+Agent: Main Agent
+Task: 云存服务 — 数据分析页接入真实数据
+
+Work Log:
+- 选型依据: 复用已有数据基础(property 历史 13.4 万条 / 事件 7,455 条), recharts@2.15.4 已装零新增依赖; 不建新表纯聚合查询
+- 关键时区发现: timestamp 列存 UTC wall time(实测 latest_ts == now() AT TIME ZONE 'utc'), 而 PG session 时区是 Asia/Shanghai — $queryRaw 内直接 now() - interval 会偏移 8h, 统一改用 (now() AT TIME ZONE 'utc') - interval(Prisma.sql 片段嵌入, 不能字符串插值否则变绑定参数报错); 经 Prisma 参数化传 JS Date 无此问题
+- analytics.service.ts 纯函数: fillTimeBuckets(稀疏聚合行补连续桶含空档置0, minute/hour/day 三粒度 UTC 对齐) / summarizeChart(4 类图表一句话摘要) / buildInsights(阈值派生: 消息量日环比>20% 激增/回落、温度超物模型 max→critical 点名设备、离线设备 warning、告警 7 天环比趋势)
+- analytics.routes.ts 4 端点: GET /storage(三表 count + pg_total_relation_size 精确字节 + 近7天增量) / GET /charts(温度 24h 逐时均值折线、活跃设备 7 天逐日柱状、告警 30 天级别环形、吞吐 60 分钟逐分面积, 一次返回) / GET /charts/:id/details(聚合点+语义化 raw 20 条, 未知 id 抛 ChartNotFoundError 40404) / GET /insights(温度超限 SQL join 物模型 spec->>max, 在线状态, 告警双窗口对比)
+- errors.ts +ChartNotFoundError(40404)
+- 前端: client.ts +4 类型 4 方法; data-analysis-page 全量重写 — 4 存储统计卡(记录数/存储占用格式化/7天新增/日均) + recharts 2×2 图表网格(Line/Bar/Pie/Area, 空数据环形图降级空态) + 查看详情 Dialog(聚合数据点表+最近原始记录表, enabled 条件查询) + 智能分析真实洞察(severity 徽章沿用); storage/charts 60s、insights 120s 自动刷新, 骨架/错误重试三件套
+- 单测 analytics.service.test.ts 24 用例: fillTimeBuckets 6(稀疏补全/非整点取整/分钟对齐/UTC 日零点/空输入/字符串 bucket 兼容) + summarizeChart 5 + buildInsights 13(四类阈值全分支/超限点名/离线超5截断/时间戳携带)
+- 修复循环 1 轮: 单测断言算错当前分钟桶(08:30 往回应是 08:28/29/30 而非 08:27), 修正断言而非实现
+- API 冒烟: storage 141,985 条/48.9MB 与 psql 直查一致; charts 4 图 24/7/2/60 数据点; insights 真实输出「消息量激增 53.6%」「4 台离线点名」「告警趋势回落」
+- 浏览器 E2E 全过(9 步): 统计卡 142,103/48.9MB/61,556/8,793.7、4 图表 SVG 渲染、温度详情 Dialog(24 聚合点+20 条 living-room-thermo-01 原始记录)、告警分布 Dialog(警告 3,225/严重告警 4,249 两行)、Escape 关闭正常、console 0 错误 0 警告
+
+Stage Summary:
+- 质量门: lint 0 / 双端 tsc 0 / 99 单测通过(新增 24)
+- 云存服务成为第 9 个真实数据页面; 13 万条历史数据首次可视化, 智能分析从写死文案变为真实派生
+- 教训: ① timestamp without time zone 列的时区基准必须实测确认(now() vs 列值对比), $queryRaw 时间窗口与列基准不一致会静默偏移 8 小时; ② Prisma $queryRaw 模板中嵌 SQL 片段必须用 Prisma.sql 包装, 字符串插值会被当绑定参数
+- 范围外 known issue(未改): ops.routes.ts 既有 $queryRaw 用 now() - interval 开窗, 与 UTC wall time 列基准存在 8h 偏移, 属精度问题不影响形状展示, 留待后续统一修正

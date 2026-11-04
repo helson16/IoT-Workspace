@@ -351,6 +351,51 @@ export interface OpsLogQuery {
   page_size?: number;
 }
 
+// ---------------- 数据分析(云存服务) ----------------
+
+export interface AnalyticsStorage {
+  total_records: number;
+  week_records: number;
+  avg_daily_records: number;
+  storage_bytes: number;
+  breakdown: Array<{ label: string; table: string; records: number; storage_bytes: number }>;
+}
+
+export interface AnalyticsChartPoint {
+  label: string;
+  value: number;
+}
+
+export interface AnalyticsChart {
+  id: string;
+  name: string;
+  type: "line" | "bar" | "pie" | "area";
+  unit: string;
+  data_source: string;
+  time_range: string;
+  refresh_interval: string;
+  summary: string;
+  points: AnalyticsChartPoint[];
+}
+
+export interface AnalyticsRawRecord {
+  device_id: string;
+  device_name: string;
+  detail: string;
+  time: string;
+}
+
+export interface AnalyticsChartDetails extends AnalyticsChart {
+  raw: AnalyticsRawRecord[];
+}
+
+export interface AnalyticsInsight {
+  title: string;
+  description: string;
+  severity: "info" | "warning" | "critical";
+  time: string;
+}
+
 // ---------------- API 方法 ----------------
 
 export const api = {
@@ -513,4 +558,12 @@ export const api = {
   },
   getForwardStats: () => apiFetch<ForwardStats>("/api/v1/forward-rules/stats"),
   getMessageTopics: () => apiFetch<MessageTopicItem[]>("/api/v1/forward-rules/topics"),
+
+  // 数据分析(云存服务)
+  getAnalyticsStorage: () => apiFetch<AnalyticsStorage>("/api/v1/analytics/storage"),
+  getAnalyticsCharts: () => apiFetch<{ charts: AnalyticsChart[] }>("/api/v1/analytics/charts"),
+  getAnalyticsChartDetails: (chartId: string) =>
+    apiFetch<AnalyticsChartDetails>(`/api/v1/analytics/charts/${chartId}/details`),
+  getAnalyticsInsights: () =>
+    apiFetch<{ insights: AnalyticsInsight[] }>("/api/v1/analytics/insights"),
 };
