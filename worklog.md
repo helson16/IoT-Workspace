@@ -157,3 +157,21 @@ Follow-up（同日，console 2 错误追查）:
 - 实验定性 net::ERR_ABORTED /?_rsc=<id> 与 / 两条错误：Next.js dev 模式 HMR 产物（连续快速保存 → 前一次 Fast Refresh 的 RSC fetch 被中断），非产品缺陷
 - 证据链：新标签纯净加载+静置 15s = 0 错误；真实节奏 4 页导航 = 0 错误；连续两次文件编辑 → 错误必现；还原后无新增。生产构建（next build）无 HMR，不存在此问题
 - 流程改进（用户要求）：此后每步改动后立即检查 console + IDE 诊断，错误当场定性（缺陷/dev 噪音/工具注入），不积压到任务末尾
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: 物模型管理页面接入真实后端（Task 8 设计文档）
+
+Work Log:
+- 前端： store +selectedProductId/setSelectedProductId；client +getThingModel/updateThingModel + 物模型类型；ApiError 补 details 透传（服务端字段级错误可展示）
+- 产品列表操作列 +「物模型」入口（FileCode2）
+- product-define-page 全量重写： 属性/事件/服务三区块真实数据，spec 按类型渲染（数值范围/枚举项/bool 文案/时间戳单位），新增/编辑共用对话框（数值/字符串/布尔/枚举/时间型动态字段，标识符唯一性+格式 2-64 长度校验），删除确认，loading 骨架/error 重试/empty 引导
+- **关键缺陷发现： PUT /thing-model 从未打通** — thing-model-schema.json 用官方字段（id/type/mode/desc），而全链路（DB/GET/seed）用 API 字段（identifier/dataType/accessMode/description），任何合法 PUT 都被 42201 拒绝。前端联调第一步即暴露
+- 修复： validator.ts 新增纯函数 toSchemaThingModel（API→Schema 字段适配，spec 原样透传），updateThingModel 校验前转换、存储逻辑不变；+4 单测（54/54 通过），文档化 schema 不校验 min>max 语义（前端负责）
+- 浏览器验证（智能照明灯）： 新增（float 0~100%）→ v2；编辑（改名+范围 0~50%）→ v3；删除 → v4 恢复 3 属性；返回列表导航正常；console 0 产品错误
+
+Stage Summary:
+- PUT 物模型端点首次端到端打通（version 递增链路验证）
+- lint 0 / root tsc 0 / backend tsc 0 / 54 单测通过
+- 教训： 端点写完 ≠ 打通，schema 校验的入参风格必须与自家 API 返回风格对齐（或加适配层）
