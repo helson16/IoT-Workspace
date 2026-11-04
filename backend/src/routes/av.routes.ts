@@ -12,6 +12,23 @@ export default async function avRoutes(fastify: FastifyInstance) {
     reply.code(resp.statusCode).send(resp.body);
   });
 
+  // GET /api/v1/av/trend - AV 事件小时趋势(hours 小时窗口, 默认 24)
+  fastify.get('/api/v1/av/trend', {
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: {
+          hours: { type: 'integer', minimum: 1, maximum: 168, default: 24 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const q = request.query as { hours?: number };
+    const trend = await service.getTrend(q.hours ?? 24);
+    const resp = success(trend);
+    reply.code(resp.statusCode).send(resp.body);
+  });
+
   // GET /api/v1/av/events - 音视频事件分页列表
   fastify.get('/api/v1/av/events', {
     schema: {

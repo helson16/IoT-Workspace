@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { api, type AvStats, type AvEventItem, type AvEventQuery } from "@/lib/api/client";
+import {
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
+  PieChart, Pie, Cell, Legend,
+} from "recharts";
+import { api, type AvStats, type AvEventItem, type AvEventQuery, type AvTrendData } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import {
   Video, Camera, Play, HardDrive, Clock, CheckCircle, RefreshCw, Search,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, PieChart as PieChartIcon,
 } from "lucide-react";
 
 type TypeFilter = NonNullable<AvEventQuery["event_type"]>;
@@ -32,6 +36,94 @@ const statusStyles: Record<string, string> = {
 };
 
 const statusLabels: Record<string, string> = { success: "成功", failed: "失败" };
+
+// ---------------- 图表 ----------------
+
+const tooltipStyle = {
+  border: "1px solid #E5E6EB",
+  borderRadius: 4,
+  fontSize: 12,
+  boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+};
+
+const seriesMeta = [
+  { key: "recording", name: "录制", color: "#0052D9" },
+  { key: "snapshot", name: "截图", color: "#00A870" },
+  { key: "playback", name: "回放", color: "#7B61FF" },
+] as const;
+
+function TrendChart({ data }: { data?: AvTrendData }) {
+  const buckets = data?.buckets ?? [];
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={buckets} margin={{ top: 5, right: 10, left: -22, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#F0F1F2" vertical={false} />
+        <XAxis dataKey="hour" tick={{ fontSize: 11, fill: "#999" }} interval={3} tickLine={false} axisLine={{ stroke: "#E5E6EB" }} />
+        <YAxis tick={{ fontSize: 11, fill: "#999" }} tickLine={false} axisLine={false} width={44} allowDecimals={false} />
+        <Tooltip contentStyle={tooltipStyle} formatter={(v, name) => [`${v} 次`, String(name)]} />
+        <Legend iconType="circle" formatter={(v) => <span style={{ fontSize: 12, color: "#666" }}>{String(v)}</span>} />
+        {seriesMeta.map((s) => (
+          <Area
+            key={s.key}
+            type="monotone"
+            dataKey={s.key}
+            name={s.name}
+            stackId="1"
+            stroke={s.color}
+            fill={s.color}
+            fillOpacity={0.18}
+            strokeWidth={1.5}
+            isAnimationActive={false}
+          />
+        ))}
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function TypePie({ stats }: { stats?: AvStats }) {
+  const data = stats
+    ? [
+        { name: "录制", value: stats.today_recording },
+        { name: "截图", value: stats.today_snapshot },
+        { name: "回放", value: stats.today_playback },
+      ]
+    : [];
+  const total = data.reduce((a, b) => a + b.value, 0);
+  if (total === 0) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
+          <PieChartIcon className="w-8 h-8 text-[#E5E6EB] mx-auto mb-2" />
+          <p className="text-[12px] text-[#BBBFC4]">今日暂无事件</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <PieChart>
+        <Pie
+          data={data}
+          dataKey="value"
+          nameKey="name"
+          cx="50%"
+          cy="50%"
+          innerRadius={45}
+          outerRadius={68}
+          paddingAngle={2}
+          isAnimationActive={false}
+        >
+          {data.map((entry, i) => (
+            <Cell key={entry.name} fill={seriesMeta[i].color} />
+          ))}
+        </Pie>
+        <Tooltip contentStyle={tooltipStyle} formatter={(v, name) => [`${v} 次`, String(name)]} />
+        <Legend iconType="circle" formatter={(v) => <span style={{ fontSize: 12, color: "#666" }}>{String(v)}</span>} />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+}
 
 function fmtTime(iso: string): string {
   const d = new Date(iso);
@@ -81,6 +173,13 @@ export function LogServicePage() {
     useQuery<AvStats>({
       queryKey: ["av-stats"],
       queryFn: () => api.getAvStats(),
+      refetchInterval: 10_000,
+    });
+
+  const { data: trend, isLoading: trendLoading, isError: trendError, refetch: refetchTrend } =
+    useQuery<AvTrendData>({
+      queryKey: ["av-trend"],
+      queryFn: () => api.getAvTrend(24),
       refetchInterval: 10_000,
     });
 
@@ -137,6 +236,43 @@ export function LogServicePage() {
           />
         </div>
       ) : null}
+
+      {/* 图表行: 24h 趋势 + 今日类型分布 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white rounded border border-[#E5E6EB] p-4 lg:col-span-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[13px] font-medium text-[#333]">24 小时事件趋势</span>
+            <span className="text-[11px] text-[#999]">按小时统计(UTC)</span>
+          </div>
+          <div className="h-[220px]">
+            {trendError ? (
+              <div className="h-full flex flex-col items-center justify-center gap-3">
+                <p className="text-[13px] text-[#E34D59]">趋势数据加载失败</p>
+                <Button onClick={() => refetchTrend()} variant="outline" className="h-8 text-[13px] gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5" /> 重新加载
+                </Button>
+              </div>
+            ) : trendLoading ? (
+              <div className="h-full w-full animate-pulse rounded bg-[#F3F4F6]" />
+            ) : (
+              <TrendChart data={trend} />
+            )}
+          </div>
+        </div>
+        <div className="bg-white rounded border border-[#E5E6EB] p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[13px] font-medium text-[#333]">今日类型分布</span>
+            <span className="text-[11px] text-[#999]">共 {stats?.today_events ?? 0} 次</span>
+          </div>
+          <div className="h-[220px]">
+            {statsLoading ? (
+              <div className="h-full w-full animate-pulse rounded bg-[#F3F4F6]" />
+            ) : (
+              <TypePie stats={stats} />
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* 工具栏 */}
       <div className="bg-white rounded border border-[#E5E6EB] p-4">

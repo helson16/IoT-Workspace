@@ -624,3 +624,25 @@ Stage Summary:
 - 安全语义闭环: EMQX auth hook 拒绝 disabled(403) 与 internal 回调拦截(403) 现已一致, 禁用设备无法通过任何链路上线或写数据
 - offline 回执 body 的 status:'offline' 为受理语义, 非 DB 状态(已核验 disabled 未被覆盖), 不改
 - worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交
+
+---
+Task ID: 18
+Agent: Main Agent
+Task: 数据可视化增强 — 音视频服务页图表(用户选定方向)
+
+Work Log:
+- 调研: ops-monitor 1 图表 / data-analysis 4 种 / 音视频页 0 图表但数据最丰富(3 万+ 事件三类型多维度) → 选点音视频页
+- 设计 .ai-docs/designs/av-visualization-design.md: 24h 趋势堆叠面积图(新端点) + 今日类型分布饼图(复用 stats 零后端改动); 不做时间范围切换器/点击下钻(避免过度设计)
+- 后端: av.service.ts 新增纯函数 buildHourlyTrend(整小时对齐定长 hours+1 桶补零, UTC 标签) + AvService.getTrend(Prisma where gte UTC ISO, 无偏移模式); av.routes.ts 新增 GET /api/v1/av/trend?hours=1~168(默认 24, JSON Schema 校验)
+- 前端: client.ts 增 AvTrendBucket/AvTrendData + getAvTrend; log-service-page.tsx 统计卡与工具栏之间插入图表行(lg 2/3+1/3): TrendChart 三色堆叠面积(录制#0052D9/截图#00A870/回放#7B61FF, 样式对齐 ops 页) + TypePie 环形图(复用 stats.today_*, 零后端改动, 空态占位); react-query ["av-trend"] 10s 刷新, 骨架/错误重试三件套
+- 单测: buildHourlyTrend 5 用例(空集定长全零桶/分桶累计/边界含/窗口外防御/hours=2 连续); 首轮 3 个测试预期写错窗口边界(误把 earliest 当 13:00, 实际 floor 后为前一天 12:00), node -e 实验证明代码正确, 修测试预期
+- 质量门: root tsc+lint 0; backend typecheck 0; npm test 264/264
+- curl 验证: trend 默认 25 桶, 末桶(当前小时) recording 118/snapshot 73/playback 45 与 psql 最近 1h 数量级一致; hours=2 返回 3 桶; 首桶零值符合建表时间线
+- E2E 4/5 PASS(截图步骤工具超时非页面缺陷): 趋势图 24 时段三色填充+图例+HH:00 刻度渲染 / 饼图「共 1072 次」与统计卡 508+365+199 一致 / 表格无回归 / console 0 新错误
+- 数据核对插曲: 页面今日 1072 vs psql UTC 日 17734 差异 = 窗口口径不同(页面=本地今日 00:00 起, psql=UTC 09-26 00:00 起); 另发现凌晨 20~84 条/h 低速 = Mac 夜间睡眠暂停模拟器 timer, 非代码缺陷, 当前已恢复 24 条/min; 模拟器日志/DB MAX(timestamp) 双确认活跃
+
+Stage Summary:
+- 音视频服务页补齐可视化: 统计卡 + 趋势/分布图表 + 筛选表格的完整数据消费层次
+- buildHourlyTrend 纯函数模式(UTC 整小时对齐 + 补零)可复用于后续小时级趋势需求
+- Mac 睡眠导致的模拟器数据空窗属环境特性, 记录不修
+- worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交
