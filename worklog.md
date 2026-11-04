@@ -71,3 +71,22 @@ Stage Summary:
 - 18 个源文件、9 个 Prisma 模型、23 个 API 端点完整实现
 - TypeScript 严格模式零编译错误
 - 三层架构：routes(校验+编排) → services(业务逻辑) → plugins(基础设施)
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: 基础设施搭建、EMQX 认证集成与 E2E 联调脚本
+
+Work Log:
+- 编写 docker-compose.yml：PostgreSQL 15 (pgdata volume) + Redis 7 (AOF+LRU) + EMQX 5.8.3 (1883/8883/8083/18083)
+- EMQX 通过环境变量配置 HTTP Auth Backend 指向 host.docker.internal:3200/api/internal/mqtt/auth
+- 编写 init-infra.sh：Docker 前置检查 → 容器启动 → 健康检查轮询（PG/Redis/EMQX）→ prisma db push → prisma generate → 端口汇总输出
+- 添加 EMQX Auth Hook 到 internal.routes.ts：解析 username `{productId}{deviceName};{sdkAppId}` 提取凭据、password 去掉 `;hmacsha256` 后缀、timingSafeEqual 校验密钥、更新设备状态+Redis在线标记、返回 200/401/403/500 给 EMQX
+- 编写 tests/mock-device.js：自动获取平台 Token → 创建产品+物模型 → 注册设备 → MQTT 一机一密连接 EMQX → 订阅 3 个下行 Topic → 每 5s 正弦波+噪声温度上报 → 高温告警事件触发 → 属性下发回复 → 行为调用回复 → 影子 delta 同步 → REST Shadow API 演示
+- 编写 PHASE3_README.md：架构图、3 步启动流程、6 个手动 API 验证命令、端口凭证汇总表、5 类故障排查、数据流转 8 项检查清单
+- tsc --noEmit 零错误
+
+Stage Summary:
+- 4 个交付物：docker-compose.yml、init-infra.sh、tests/mock-device.js、PHASE3_README.md
+- EMQX HTTP Auth 完整闭环：设备 CONNECT → EMQX → Fastify auth endpoint → DB 密钥校验 → 200/401
+- mock-device.js 实现完整设备生命周期：注册 → 认证 → 上报 → 接收指令 → 影子同步

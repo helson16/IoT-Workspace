@@ -1,0 +1,8 @@
+{
+  "name": "iot-explorer-e2e-tests",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "mqtt": "^5.10.4"
+  }
+}
