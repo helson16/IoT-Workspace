@@ -1,0 +1,49 @@
+{
+  "_comment": "云端返回影子（MQTT方式）— 包含设备需要同步的desired和delta",
+  "_topic": "$shadow/get/accepted/{ProductId}/{DeviceName}",
+  "_direction": "Cloud → Device (MQTT)",
+
+  "method": "shadow.get.reply",
+  "clientToken": "d4c3b2a1-0f9e-8d7c-6b5a-4321fedcba09",
+  "version": "1.0",
+  "payload": {
+    "state": {
+      "reported": {
+        "temperature": 25.6,
+        "humidity": 60.2,
+        "power_switch": 1,
+        "working_mode": "cool",
+        "fan_speed": "auto",
+        "target_temperature": 24,
+        "error_code": 0,
+        "voltage": 220.3
+      },
+      "desired": {
+        "target_temperature": 22,
+        "power_switch": 0
+      },
+      "delta": {
+        "target_temperature": 22,
+        "power_switch": 0
+      }
+    },
+    "metadata": {
+      "reported": {
+        "temperature": { "timestamp": 1692960050000 },
+        "humidity": { "timestamp": 1692960050000 },
+        "power_switch": { "timestamp": 1692950000000 },
+        "working_mode": { "timestamp": 1692950000000 },
+        "fan_speed": { "timestamp": 1692950000 },
+        "target_temperature": { "timestamp": 1692950000000 },
+        "error_code": { "timestamp": 1692960050000 },
+        "voltage": { "timestamp": 1692960050000 }
+      },
+      "desired": {
+        "target_temperature": { "timestamp": 1692960200000 },
+        "power_switch": { "timestamp": 1692960200000 }
+      }
+    },
+    "version": 8,
+    "timestamp": 1692960200000
+  }
+}

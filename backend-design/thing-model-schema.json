@@ -1,0 +1,284 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://iot-platform.local/schemas/thing-model/v1",\n  "title": "IoT Thing Model Definition",
+  "description": "物模型定义 JSON Schema，用于定义和校验产品下设备的属性、事件、行为。完全兼容腾讯云物模型协议格式。",
+  "type": "object",
+  "required": ["version", "properties"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "物模型协议版本号",
+      "examples": ["1.0", "1.1", "2.0"]
+    },
+    "profile": {
+      "type": "object",
+      "description": "产品概要信息",
+      "properties": {
+        "productKey": {
+          "type": "string",
+          "description": "产品Key，对应 products.product_id"
+        },
+        "productName": {
+          "type": "string",
+          "description": "产品名称"
+        }
+      }
+    },
+    "properties": {
+      "type": "array",
+      "description": "属性定义列表",
+      "items": {
+        "$ref": "#/definitions/PropertyDef"
+      }
+    },
+    "events": {
+      "type": "array",
+      "description": "事件定义列表",
+      "items": {
+        "$ref": "#/definitions/EventDef"
+      }
+    },
+    "actions": {
+      "type": "array",
+      "description": "行为/服务定义列表",
+      "items": {
+        "$ref": "#/definitions/ActionDef"
+      }
+    }
+  },
+  "definitions": {
+    "PropertyDef": {
+      "type": "object",
+      "required": ["id", "name", "type", "mode"],
+      "description": "单个属性定义",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{1,63}$",
+          "description": "属性唯一标识符",
+          "examples": ["temperature", "power_switch", "target_temperature"]
+        },
+        "name": {
+          "type": "string",
+          "description": "属性名称（支持中英文）",
+          "examples": ["温度", "电源开关", "目标温度"]
+        },
+        "desc": {
+          "type": "string",
+          "description": "属性详细描述"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["int", "long", "float", "double", "string", "bool", "enum", "timestamp", "struct", "array"],
+          "description": "数据类型"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["rw", "r", "w"],
+          "description": "访问模式: rw=读写, r=只读, w=只写"
+        },
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否为必填属性"
+        },
+        "spec": {
+          "description": "类型规格定义（根据 type 不同结构不同）",
+          "oneOf": [
+            { "$ref": "#/definitions/NumSpec" },
+            { "$ref": "#/definitions/StringSpec" },
+            { "$ref": "#/definitions/BoolSpec" },
+            { "$ref": "#/definitions/EnumSpec" },
+            { "$ref": "#/definitions/TimestampSpec" },
+            { "$ref": "#/definitions/StructSpec" },
+            { "$ref": "#/definitions/ArraySpec" }
+          ]
+        }
+      }
+    },
+    "NumSpec": {
+      "type": "object",
+      "description": "数值型规格 (int, long, float, double)",
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "step": { "type": "number", "minimum": 0 },
+        "unit": { "type": "string", "description": "单位符号", "examples": ["°C", "%", "hPa", "V", "A"] },
+        "unitName": { "type": "string", "description": "单位中文名", "examples": ["摄氏度", "百分比", "伏特"] }
+      }
+    },
+    "StringSpec": {
+      "type": "object",
+      "description": "字符串型规格",
+      "properties": {
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "pattern": { "type": "string", "description": "正则校验" }
+      }
+    },
+    "BoolSpec": {
+      "type": "object",
+      "description": "布尔型规格",
+      "properties": {
+        "0": { "type": "string", "description": "false 时的显示文本", "default": "关" },
+        "1": { "type": "string", "description": "true 时的显示文本", "default": "开" }
+      }
+    },
+    "EnumSpec": {
+      "type": "object",
+      "required": ["enumList"],
+      "description": "枚举型规格",
+      "properties": {
+        "enumList": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["value", "label"],
+            "properties": {
+              "value": { "type": "string", "description": "枚举值" },
+              "label": { "type": "string", "description": "显示文本" }
+            }
+          }
+        }
+      }
+    },
+    "TimestampSpec": {
+      "type": "object",
+      "description": "时间戳型规格",
+      "properties": {
+        "unit": { "type": "string", "enum": ["s", "ms"], "description": "时间戳单位: s=秒, ms=毫秒", "default": "s" }
+      }
+    },
+    "StructSpec": {
+      "type": "object",
+      "required": ["members"],
+      "description": "结构体型规格",
+      "properties": {
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PropertyDef"
+          }
+        }
+      }
+    },
+    "ArraySpec": {
+      "type": "object",
+      "required": ["itemType"],
+      "description": "数组型规格",
+      "properties": {
+        "itemType": {
+          "type": "string",
+          "description": "数组元素类型: int, float, string, bool, enum, struct"
+        },
+        "itemSpec": {
+          "description": "当 itemType 为 enum 或 struct 时，定义元素的结构",
+          "oneOf": [
+            { "$ref": "#/definitions/EnumSpec" },
+            { "$ref": "#/definitions/StructSpec" }
+          ]
+        },
+        "maxSize": { "type": "integer", "description": "数组最大长度" }
+      }
+    },
+    "EventDef": {
+      "type": "object",
+      "required": ["id", "name", "type", "outputParams"],
+      "description": "事件定义",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{1,63}$",
+          "description": "事件标识符"
+        },
+        "name": {
+          "type": "string",
+          "description": "事件名称"
+        },
+        "desc": {
+          "type": "string",
+          "description": "事件描述"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["info", "warn", "error"],
+          "description": "事件类型: info=信息, warn=告警, error=故障"
+        },
+        "outputParams": {
+          "type": "array",
+          "description": "事件输出参数列表",
+          "items": {
+            "type": "object",
+            "required": ["identifier", "name", "dataType"],
+            "properties": {
+              "identifier": { "type": "string" },
+              "name": { "type": "string" },
+              "dataType": { "type": "string" },
+              "spec": { "type": "object" }
+            }
+          }
+        }
+      }
+    },
+    "ActionDef": {
+      "type": "object",
+      "required": ["id", "name", "inputParams", "outputParams"],
+      "description": "行为/服务定义",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{1,63}$",
+          "description": "行为标识符"
+        },
+        "name": {
+          "type": "string",
+          "description": "行为名称"
+        },
+        "desc": {
+          "type": "string",
+          "description": "行为描述"
+        },
+        "inputParams": {
+          "type": "array",
+          "description": "输入参数列表",
+          "items": {
+            "type": "object",
+            "required": ["identifier", "name", "dataType"],
+            "properties": {
+              "identifier": { "type": "string" },
+              "name": { "type": "string" },
+              "dataType": { "type": "string" },
+              "spec": { "type": "object" }
+            }
+          }
+        },
+        "outputParams": {
+          "type": "array",
+          "description": "输出参数列表",
+          "items": {
+            "type": "object",
+            "required": ["identifier", "name", "dataType"],
+            "properties": {
+              "identifier": { "type": "string" },
+              "name": { "type": "string" },
+              "dataType": { "type": "string" },
+              "spec": { "type": "object" }
+            }
+          }
+        },
+        "async": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否异步调用"
+        },
+        "callStrategy": {
+          "type": "string",
+          "enum": ["direct", "queue", "broadcast"],
+          "default": "direct",
+          "description": "调用策略"
+        }
+      }
+    }
+  }
+}

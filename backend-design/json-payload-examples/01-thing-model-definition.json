@@ -1,0 +1,243 @@
+{
+  "_comment": "物模型完整定义示例 —— 智能温控器（兼容腾讯云物模型协议格式）",
+  "version": "1.0",
+  "profile": {
+    "productKey": "prod-a1b2c3d4",
+    "productName": "智能温控器"
+  },
+  "properties": [
+    {
+      "id": "temperature",
+      "name": "当前温度",
+      "desc": "设备采集的当前环境温度",
+      "type": "float",
+      "mode": "rw",
+      "required": true,
+      "spec": {
+        "min": -40,
+        "max": 85,
+        "step": 0.1,
+        "unit": "°C",
+        "unitName": "摄氏度"
+      }
+    },
+    {
+      "id": "humidity",
+      "name": "当前湿度",
+      "desc": "设备采集的当前环境湿度",
+      "type": "float",
+      "mode": "r",
+      "required": true,
+      "spec": {
+        "min": 0,
+        "max": 100,
+        "step": 0.1,
+        "unit": "%",
+        "unitName": "百分比"
+      }
+    },
+    {
+      "id": "target_temperature",
+      "name": "目标温度",
+      "desc": "用户通过App或面板设定的目标温度",
+      "type": "int",
+      "mode": "rw",
+      "required": true,
+      "spec": {
+        "min": 16,
+        "max": 32,
+        "step": 1,
+        "unit": "°C",
+        "unitName": "摄氏度"
+      }
+    },
+    {
+      "id": "power_switch",
+      "name": "电源开关",
+      "desc": "设备电源总开关",
+      "type": "bool",
+      "mode": "rw",
+      "required": true,
+      "spec": {
+        "0": "关",
+        "1": "开"
+      }
+    },
+    {
+      "id": "working_mode",
+      "name": "工作模式",
+      "desc": "温控器工作模式切换",
+      "type": "enum",
+      "mode": "rw",
+      "required": true,
+      "spec": {
+        "enumList": [
+          { "value": "auto", "label": "自动" },
+          { "value": "cool", "label": "制冷" },
+          { "value": "heat", "label": "制热" },
+          { "value": "fan",  "label": "送风" },
+          { "value": "eco",  "label": "节能" }
+        ]
+      }
+    },
+    {
+      "id": "fan_speed",
+      "name": "风速",
+      "desc": "风扇转速档位",
+      "type": "enum",
+      "mode": "rw",
+      "required": false,
+      "spec": {
+        "enumList": [
+          { "value": "auto",   "label": "自动" },
+          { "value": "low",    "label": "低" },
+          { "value": "medium", "label": "中" },
+          { "value": "high",   "label": "高" }
+        ]
+      }
+    },
+    {
+      "id": "error_code",
+      "name": "故障码",
+      "desc": "设备自检故障码，0表示正常",
+      "type": "int",
+      "mode": "r",
+      "required": false,
+      "spec": {
+        "min": 0,
+        "max": 65535
+      }
+    },
+    {
+      "id": "voltage",
+      "name": "供电电压",
+      "desc": "当前供电电压监测值",
+      "type": "float",
+      "mode": "r",
+      "required": false,
+      "spec": {
+        "min": 0,
+        "max": 300,
+        "step": 0.1,
+        "unit": "V",
+        "unitName": "伏特"
+      }
+    }
+  ],
+  "events": [
+    {
+      "id": "high_temperature_alarm",
+      "name": "高温告警",
+      "desc": "温度超过告警阈值时触发",
+      "type": "warn",
+      "outputParams": [
+        {
+          "identifier": "current_temp",
+          "name": "当前温度",
+          "dataType": "float",
+          "spec": { "unit": "°C" }
+        },
+        {
+          "identifier": "threshold",
+          "name": "告警阈值",
+          "dataType": "float",
+          "spec": { "unit": "°C" }
+        }
+      ]
+    },
+    {
+      "id": "device_fault",
+      "name": "设备故障",
+      "desc": "设备检测到硬件故障时触发",
+      "type": "error",
+      "outputParams": [
+        {
+          "identifier": "error_code",
+          "name": "故障码",
+          "dataType": "int"
+        },
+        {
+          "identifier": "error_msg",
+          "name": "故障描述",
+          "dataType": "string"
+        }
+      ]
+    },
+    {
+      "id": "firmware_update_ready",
+      "name": "固件更新就绪",
+      "desc": "新固件下载完成，等待安装",
+      "type": "info",
+      "outputParams": [
+        {
+          "identifier": "version",
+          "name": "新版本号",
+          "dataType": "string"
+        },
+        {
+          "identifier": "size",
+          "name": "固件大小",
+          "dataType": "int",
+          "spec": { "unit": "KB" }
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "set_temperature",
+      "name": "设置温度",
+      "desc": "远程设置目标温度",
+      "inputParams": [
+        {
+          "identifier": "target_temp",
+          "name": "目标温度",
+          "dataType": "int",
+          "spec": { "min": 16, "max": 32 }
+        }
+      ],
+      "outputParams": [],
+      "async": false,
+      "callStrategy": "direct"
+    },
+    {
+      "id": "reboot",
+      "name": "重启设备",
+      "desc": "远程重启设备",
+      "inputParams": [],
+      "outputParams": [
+        {
+          "identifier": "result",
+          "name": "执行结果",
+          "dataType": "bool"
+        }
+      ],
+      "async": true,
+      "callStrategy": "direct"
+    },
+    {
+      "id": "set_mode",
+      "name": "设置模式",
+      "desc": "切换工作模式",
+      "inputParams": [
+        {
+          "identifier": "mode",
+          "name": "工作模式",
+          "dataType": "enum",
+          "spec": {
+            "enumList": [
+              { "value": "auto", "label": "自动" },
+              { "value": "cool", "label": "制冷" },
+              { "value": "heat", "label": "制热" },
+              { "value": "fan",  "label": "送风" },
+              { "value": "eco",  "label": "节能" }
+            ]
+          }
+        }
+      ],
+      "outputParams": [],
+      "async": false,
+      "callStrategy": "direct"
+    }
+  ]
+}

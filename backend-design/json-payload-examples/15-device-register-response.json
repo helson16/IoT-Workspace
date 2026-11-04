@@ -1,0 +1,29 @@
+{
+  "_comment": "设备注册响应 — 包含设备凭证和MQTT连接参数",
+  "_direction": "Cloud → Application (REST API Response)",
+
+  "code": 0,
+  "message": "success",
+  "data": {
+    "device_id": "prod-a1b2c3d4/thermostat-bedroom-01",
+    "device_name": "thermostat-bedroom-01",
+    "device_secret": "a3f8e2c1b7d69504f2a8e3c1b7d69504",
+    "product_id": "prod-a1b2c3d4",
+    "status": "not-activated",
+    "mqtt_config": {
+      "host": "mqtt.iot.tencentcloudapi.com",
+      "port": 8883,
+      "ssl": true,
+      "client_id": "prod-a1b2c3d4thermostat-bedroom-01;12010126;12345;1622547200",
+      "username": "prod-a1b2c3d4thermostat-bedroom-01;12010126;12345;1622547200",
+      "password": "a3f8e2c1b7d69504f2a8e3c1b7d69504;hmacsha256",
+      "subscribe_topics": [
+        "$thing/down/property/prod-a1b2c3d4/thermostat-bedroom-01",
+        "$thing/down/action/prod-a1b2c3d4/thermostat-bedroom-01",
+        "$shadow/get/accepted/prod-a1b2c3d4/thermostat-bedroom-01"
+      ],
+      "publish_topic": "$thing/up/property/prod-a1b2c3d4/thermostat-bedroom-01"
+    },
+    "created_at": "2024-08-25T10:00:00.000Z"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "_comment": "云端属性设置 — MQTT下行消息（云端 → 设备）",
+  "_topic": "$thing/down/property/{ProductId}/{DeviceName}",
+  "_direction": "Cloud → Device",
+
+  "method": "thing.property.set",
+  "clientToken": "a1b2c3d4-5678-90ef-abcd-ef1234567890",
+  "version": "1.0",
+  "params": {
+    "target_temperature": 22,
+    "power_switch": 1,
+    "working_mode": "cool",
+    "fan_speed": "medium"
+  }
+}

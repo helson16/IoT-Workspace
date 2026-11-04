@@ -1,0 +1,15 @@
+{
+  "_comment": "云端调用设备行为/服务 — MQTT下行消息（云端 → 设备）",
+  "_topic": "$thing/down/action/{ProductId}/{DeviceName}",
+  "_direction": "Cloud → Device",
+
+  "method": "thing.action.invoke",
+  "clientToken": "f1e2d3c4-b5a6-9788-6543-2109fedcba98",
+  "version": "1.0",
+  "params": {
+    "action_id": "set_temperature",
+    "input_params": {
+      "target_temp": 22
+    }
+  }
+}

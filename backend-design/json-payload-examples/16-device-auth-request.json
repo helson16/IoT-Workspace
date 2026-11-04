@@ -1,0 +1,8 @@
+{
+  "_comment": "设备鉴权请求 — HTTP POST /api/v1/auth/device（设备首次连接时调用）",
+  "_direction": "Device → Cloud (REST API)",
+
+  "device_name": "thermostat-bedroom-01",
+  "product_id": "prod-a1b2c3d4",
+  "device_secret": "a3f8e2c1b7d69504f2a8e3c1b7d69504"
+}

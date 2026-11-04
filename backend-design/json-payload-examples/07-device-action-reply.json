@@ -1,0 +1,16 @@
+{
+  "_comment": "设备行为调用响应 — MQTT上行消息（设备 → 云端，同步回复）",
+  "_topic": "$thing/up/action/{ProductId}/{DeviceName}",
+  "_direction": "Device → Cloud",
+
+  "method": "thing.action.invoke.reply",
+  "clientToken": "f1e2d3c4-b5a6-9788-6543-2109fedcba98",
+  "version": "1.0",
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "output_params": {
+      "result": true
+    }
+  }
+}

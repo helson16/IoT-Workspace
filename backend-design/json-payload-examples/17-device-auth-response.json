@@ -1,0 +1,18 @@
+{
+  "_comment": "设备鉴权响应 — 返回MQTT连接令牌",
+  "_direction": "Cloud → Device (REST API Response)",
+
+  "code": 0,
+  "message": "success",
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkZXZpY2VfaWQiOiJwcm9kLWExYjJjM2Q0L3RoZXJtb3N0YXQtYmVkcm9vbS0wMSIsImlhdCI6MTY5Mjk2MDAwMCwiZXhwIjoxNjkzMDQ2NDAwfQ.xyz",
+    "expires_in": 86400,
+    "mqtt_config": {
+      "host": "mqtt.iot.tencentcloudapi.com",
+      "port": 8883,
+      "client_id": "prod-a1b2c3d4thermostat-bedroom-01;12010126;12345;1693046400",
+      "username": "prod-a1b2c3d4thermostat-bedroom-01;12010126",
+      "keepalive": 1200
+    }
+  }
+}

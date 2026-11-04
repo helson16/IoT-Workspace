@@ -1,0 +1,11 @@
+{
+  "_comment": "设备注册请求 — HTTP POST /api/v1/products/{productId}/devices/register",
+  "_direction": "Application → Cloud (REST API)",
+
+  "device_name": "thermostat-bedroom-01",
+  "tags": {
+    "location": "主卧",
+    "floor": "2F",
+    "building": "A栋"
+  }
+}

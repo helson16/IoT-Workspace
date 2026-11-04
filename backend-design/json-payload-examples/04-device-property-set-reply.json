@@ -1,0 +1,12 @@
+{
+  "_comment": "设备属性设置响应 — MQTT上行消息（设备 → 云端，回复云端设置指令）",
+  "_topic": "$thing/up/property/{ProductId}/{DeviceName}",
+  "_direction": "Device → Cloud",
+
+  "method": "thing.property.set.reply",
+  "clientToken": "a1b2c3d4-5678-90ef-abcd-ef1234567890",
+  "version": "1.0",
+  "code": 0,
+  "msg": "success",
+  "data": {}
+}

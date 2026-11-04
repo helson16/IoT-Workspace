@@ -1,0 +1,48 @@
+{
+  "_comment": "获取设备影子完整响应 — HTTP GET /api/v1/shadows/{deviceId}",
+  "_direction": "Cloud → Application (REST API)",
+
+  "code": 0,
+  "message": "success",
+  "data": {
+    "device_id": "prod-a1b2c3d4/thermostat-living-room",
+    "state": {
+      "reported": {
+        "temperature": 25.6,
+        "humidity": 60.2,
+        "power_switch": 1,
+        "working_mode": "cool",
+        "fan_speed": "auto",
+        "target_temperature": 24,
+        "error_code": 0,
+        "voltage": 220.3
+      },
+      "desired": {
+        "target_temperature": 22,
+        "fan_speed": "medium"
+      },
+      "delta": {
+        "target_temperature": 22,
+        "fan_speed": "medium"
+      }
+    },
+    "metadata": {
+      "reported": {
+        "temperature": { "timestamp": 1692960050000 },
+        "humidity": { "timestamp": 1692960050000 },
+        "power_switch": { "timestamp": 1692950000000 },
+        "working_mode": { "timestamp": 1692950000000 },
+        "fan_speed": { "timestamp": 1692950000000 },
+        "target_temperature": { "timestamp": 1692950000000 },
+        "error_code": { "timestamp": 1692960050000 },
+        "voltage": { "timestamp": 1692960050000 }
+      },
+      "desired": {
+        "target_temperature": { "timestamp": 1692960100000 },
+        "fan_speed": { "timestamp": 1692960100000 }
+      }
+    },
+    "version": 7,
+    "timestamp": 1692960100000
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "_comment": "设备获取影子（MQTT方式）— 设备连接后主动拉取最新desired状态",
+  "_topic": "$shadow/get/{ProductId}/{DeviceName}",
+  "_direction": "Device → Cloud (MQTT)",
+
+  "method": "shadow.get",
+  "clientToken": "d4c3b2a1-0f9e-8d7c-6b5a-4321fedcba09",
+  "version": "1.0"
+}

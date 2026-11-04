@@ -1,0 +1,12 @@
+{
+  "_comment": "更新设备影子期望状态 — HTTP PUT /api/v1/shadows/{deviceId}",
+  "_direction": "Application → Cloud (REST API)",
+
+  "state": {
+    "desired": {
+      "target_temperature": 22,
+      "power_switch": 0
+    }
+  },
+  "version": 7
+}

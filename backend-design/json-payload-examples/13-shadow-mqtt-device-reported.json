@@ -1,0 +1,18 @@
+{
+  "_comment": "设备上报reported状态（MQTT方式）— 设备执行desired后同步状态",
+  "_topic": "$shadow/update/{ProductId}/{DeviceName}",
+  "_direction": "Device → Cloud (MQTT)",
+
+  "method": "shadow.update",
+  "clientToken": "a9b8c7d6-e5f4-3210-fedc-ba0987654321",
+  "version": "1.0",
+  "payload": {
+    "state": {
+      "reported": {
+        "target_temperature": 22,
+        "power_switch": 0
+      }
+    },
+    "version": 8
+  }
+}

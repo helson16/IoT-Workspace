@@ -1,0 +1,18 @@
+{
+  "_comment": "设备事件上报 — MQTT上行消息（设备 → 云端）",
+  "_topic": "$thing/up/event/{ProductId}/{DeviceName}",
+  "_direction": "Device → Cloud",
+
+  "method": "thing.event.{EventType}.post",
+  "clientToken": "e5f6a7b8-9c0d-1e2f-3a4b-5c6d7e8f9a0b",
+  "version": "1.0",
+  "params": {
+    "event_id": "high_temperature_alarm",
+    "event_type": "warn",
+    "event_time": 1692960000000,
+    "output_params": {
+      "current_temp": 38.5,
+      "threshold": 35.0
+    }
+  }
+}

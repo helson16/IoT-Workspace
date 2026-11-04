@@ -1,0 +1,19 @@
+{
+  "_comment": "设备属性上报 — MQTT上行消息（设备 → 云端）",
+  "_topic": "$thing/up/property/{ProductId}/{DeviceName}",
+  "_direction": "Device → Cloud",
+
+  "method": "thing.event.property.post",
+  "clientToken": "c8a0e5f7-3b21-4d6e-9f12-a8b7c6d5e4f3",
+  "version": "1.0",
+  "params": {
+    "temperature": 25.6,
+    "humidity": 60.2,
+    "target_temperature": 24,
+    "power_switch": 1,
+    "working_mode": "cool",
+    "fan_speed": "auto",
+    "error_code": 0,
+    "voltage": 220.3
+  }
+}
