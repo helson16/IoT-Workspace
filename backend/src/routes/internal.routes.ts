@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { config } from '../config/index.js';
 import { ShadowService } from '../services/shadow.service.js';
 import { RuleEngineService } from '../services/rule-engine.service.js';
+import { recordAuthLog } from '../services/security.service.js';
 import { thingModelValidator } from '../shared/validator.js';
 import { success } from '../shared/response.js';
 import { UnauthorizedError, PropertyValueInvalidError } from '../shared/errors.js';
@@ -365,7 +366,7 @@ export default async function internalRoutes(fastify: FastifyInstance) {
       reply.code(401).send();
       return;
     }
-    const { timingSafeEqual } = await import('../shared/crypto.js');
+    const { timingSafeEqual, generateDeviceId } = await import('../shared/crypto.js');
     if (!timingSafeEqual(String(secret), config.internalSecret)) {
       reply.code(401).send();
       return;
@@ -373,7 +374,8 @@ export default async function internalRoutes(fastify: FastifyInstance) {
 
     // 2. 从 username 解析 productId + deviceName
     //    格式: {productId}{deviceName};{sdkAppId}
-    //    productId 固定格式 prod-xxxxxxxx（11字符）
+    //    productId 固定格式 prod-xxxxxxxx("prod-" 5 字符 + 8 hex = 13 字符,
+    //    与 generateProductId() 一致; 此前误写 11 会导致解析错位认证必败)
     const semicolonIdx = username.indexOf(';');
     if (semicolonIdx === -1) {
       fastify.log.warn({ username }, 'Invalid username format: missing semicolon');
@@ -382,8 +384,7 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     }
     const prefixPart = username.substring(0, semicolonIdx);
 
-    // productId 总是 "prod-" + 8 hex = 11 字符
-    const PRODUCT_ID_LEN = 11;
+    const PRODUCT_ID_LEN = 13;
     if (prefixPart.length <= PRODUCT_ID_LEN) {
       fastify.log.warn({ username }, 'Invalid username format: too short');
       reply.code(401).send();
@@ -412,33 +413,51 @@ export default async function internalRoutes(fastify: FastifyInstance) {
           deviceId: true,
           deviceSecret: true,
           status: true,
+          product: { select: { productName: true } },
         },
+      });
+
+      // 认证埋点: mqtt-connect 成功/失败均写 device_auth_logs(deviceId 为确定性 sha256)
+      const logIp = request.ip;
+      const logBase = (result: 'success' | 'failure', reason?: string) => ({
+        deviceId: generateDeviceId(productId, deviceName),
+        deviceName,
+        productId,
+        productName: device?.product?.productName ?? '',
+        authType: 'mqtt-connect' as const,
+        result,
+        reason,
+        ip: logIp,
       });
 
       if (!device) {
         fastify.log.warn({ productId, deviceName, clientid }, 'EMQX auth: device not found');
+        void recordAuthLog(fastify.db, logBase('failure', 'Device not found'), fastify.log);
         reply.code(401).send();
         return;
       }
 
       if (device.status === 'disabled') {
         fastify.log.warn({ deviceId: device.deviceId }, 'EMQX auth: device is disabled');
+        void recordAuthLog(fastify.db, logBase('failure', 'Device is disabled'), fastify.log);
         reply.code(403).send();
         return;
       }
 
       if (!timingSafeEqual(device.deviceSecret, deviceSecret)) {
         fastify.log.warn({ deviceId: device.deviceId }, 'EMQX auth: secret mismatch');
+        void recordAuthLog(fastify.db, logBase('failure', 'Secret mismatch'), fastify.log);
         reply.code(401).send();
         return;
       }
 
-      // 5. 认证成功 — 更新设备状态 + Redis 在线标记
+      // 5. 认证成功 — 更新设备状态 + Redis 在线标记(顺带记录认证 IP)
       await fastify.db.device.update({
         where: { deviceId: device.deviceId },
-        data: { status: 'online', lastLoginAt: new Date() },
+        data: { status: 'online', lastLoginAt: new Date(), lastIp: request.ip },
       });
       await fastify.setDeviceOnline(device.deviceId);
+      void recordAuthLog(fastify.db, logBase('success'), fastify.log);
 
       fastify.log.info(
         { deviceId: device.deviceId, productId, deviceName, clientid },

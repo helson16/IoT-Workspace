@@ -10,7 +10,7 @@ import { DeviceGroupsPage } from "@/components/tencent/pages/device-groups-page"
 import { ProductListPage } from "@/components/tencent/pages/product-list-page";
 import { ProductDefinePage } from "@/components/tencent/pages/product-define-page";
 import { MessageQueuePage } from "@/components/tencent/pages/message-queue-page";
-import { RuleEnginePage } from "@/components/tencent/pages/rule-engine-page";
+import { SecurityAuthPage } from "@/components/tencent/pages/rule-engine-page";
 import { CloudDevPage } from "@/components/tencent/pages/cloud-dev-page";
 import { DataAnalysisPage } from "@/components/tencent/pages/data-analysis-page";
 import { LogServicePage } from "@/components/tencent/pages/log-service-page";
@@ -25,7 +25,7 @@ const pageMap: Record<PageKey, React.ComponentType> = {
   "product-list": ProductListPage,
   "product-define": ProductDefinePage,
   "message-queue": MessageQueuePage,
-  "rule-engine": RuleEnginePage,
+  "rule-engine": SecurityAuthPage,
   "cloud-dev": CloudDevPage,
   "data-analysis": DataAnalysisPage,
   "log-service": LogServicePage,

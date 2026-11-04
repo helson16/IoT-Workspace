@@ -396,6 +396,65 @@ export interface AnalyticsInsight {
   time: string;
 }
 
+// ---------------- 安全认证 ----------------
+
+export interface SecurityStats {
+  device_total: number;
+  online: number;
+  disabled: number;
+  today_auth_count: number;
+  today_auth_failure: number;
+}
+
+export interface SecurityCredentialItem {
+  deviceId: string;
+  deviceName: string;
+  productId: string;
+  productName: string;
+  status: "online" | "offline" | "not-activated" | "disabled";
+  maskedSecret: string;
+  lastLoginAt: string | null;
+  lastIp: string | null;
+  createdAt: string;
+}
+
+export interface SecurityMqttConfig {
+  host: string;
+  port: number;
+  ssl: boolean;
+  clientId: string;
+  username: string;
+  password: string;
+  subscribeTopics: string[];
+  publishTopic: string;
+}
+
+export interface SecurityCredentialDetail {
+  deviceId: string;
+  deviceName: string;
+  productId: string;
+  productName: string;
+  status: string;
+  deviceSecret: string;
+  lastLoginAt: string | null;
+  lastIp: string | null;
+  mqttConfig: SecurityMqttConfig;
+}
+
+export type SecurityAuthType = "device-token" | "mqtt-connect" | "secret-rotate" | "status-change";
+
+export interface SecurityAuthLogItem {
+  id: number;
+  time: string;
+  deviceId: string;
+  deviceName: string;
+  productName: string;
+  authType: SecurityAuthType;
+  result: "success" | "failure";
+  reason: string | null;
+  ip: string | null;
+}
+
 // ---------------- API 方法 ----------------
 
 export const api = {
@@ -566,4 +625,49 @@ export const api = {
     apiFetch<AnalyticsChartDetails>(`/api/v1/analytics/charts/${chartId}/details`),
   getAnalyticsInsights: () =>
     apiFetch<{ insights: AnalyticsInsight[] }>("/api/v1/analytics/insights"),
+
+  // 安全认证
+  getSecurityStats: () => apiFetch<SecurityStats>("/api/v1/security/stats"),
+  getSecurityCredentials: (
+    params: { page?: number; page_size?: number; keyword?: string; status?: string } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set("page", String(params.page));
+    if (params.page_size) qs.set("page_size", String(params.page_size));
+    if (params.keyword) qs.set("keyword", params.keyword);
+    if (params.status) qs.set("status", params.status);
+    return apiFetch<{
+      total: number;
+      page: number;
+      page_size: number;
+      items: SecurityCredentialItem[];
+    }>(`/api/v1/security/credentials?${qs.toString()}`);
+  },
+  getSecurityCredential: (deviceId: string) =>
+    apiFetch<SecurityCredentialDetail>(`/api/v1/security/credentials/${deviceId}`),
+  rotateDeviceSecret: (deviceId: string) =>
+    apiFetch<{ deviceId: string; deviceSecret: string; message: string }>(
+      `/api/v1/security/credentials/${deviceId}/rotate`,
+      { method: "POST" },
+    ),
+  setSecurityDeviceStatus: (deviceId: string, action: "disable" | "enable") =>
+    apiFetch<{ deviceId: string; status: string }>(
+      `/api/v1/security/devices/${deviceId}/status`,
+      { method: "PATCH", body: JSON.stringify({ action }) },
+    ),
+  getSecurityAuthLogs: (
+    query: { page?: number; page_size?: number; auth_type?: string; result?: string } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (query.page) qs.set("page", String(query.page));
+    if (query.page_size) qs.set("page_size", String(query.page_size));
+    if (query.auth_type) qs.set("auth_type", query.auth_type);
+    if (query.result) qs.set("result", query.result);
+    return apiFetch<{
+      total: number;
+      page: number;
+      page_size: number;
+      items: SecurityAuthLogItem[];
+    }>(`/api/v1/security/auth-logs?${qs.toString()}`);
+  },
 };

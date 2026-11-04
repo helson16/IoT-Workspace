@@ -70,6 +70,8 @@ export interface DeviceAuthInput {
   product_id: string;
   device_name: string;
   device_secret: string;
+  /** 认证来源 IP(可选, 用于 lastIp 记录与认证日志) */
+  ip?: string;
 }
 
 export interface DeviceAuthOutput {

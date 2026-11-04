@@ -7,5 +7,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/unit/**/*.test.ts'],
+    // config/index.ts 在 import 期做 JWT_SECRET 非空检查, 测试环境注入占位值
+    env: {
+      JWT_SECRET: 'unit-test-secret',
+    },
   },
 });

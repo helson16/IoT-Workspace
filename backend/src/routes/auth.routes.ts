@@ -1,11 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { DeviceService } from '../services/device.service.js';
+import { recordAuthLog } from '../services/security.service.js';
 import { success } from '../shared/response.js';
 import { UnauthorizedError, DeviceAuthError } from '../shared/errors.js';
-import { timingSafeEqual } from '../shared/crypto.js';
+import { timingSafeEqual, generateDeviceId } from '../shared/crypto.js';
 import { config } from '../config/index.js';
-import jwt from 'jsonwebtoken';
-import type { JwtDevicePayload } from '../types/index.js';
 
 export default async function authRoutes(fastify: FastifyInstance) {
   // POST /api/v1/auth/device - 设备认证获取连接令牌
@@ -25,9 +24,48 @@ export default async function authRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { product_id, device_name, device_secret } = request.body as any;
     const service = new DeviceService(fastify.db, fastify);
-    const result = await service.authenticate({ product_id, device_name, device_secret });
-    const resp = success(result);
-    reply.code(resp.statusCode).send(resp.body);
+
+    // 认证埋点: deviceId 为确定性 sha256(generateDeviceId), 产品名一次查询降级取空串
+    const productName = await fastify.db.product
+      .findUnique({
+        where: { productId: product_id },
+        select: { productName: true },
+      })
+      .then((p: any) => p?.productName ?? '')
+      .catch(() => '');
+
+    const logEntry = (result: 'success' | 'failure', reason?: string) => ({
+      deviceId: generateDeviceId(product_id, device_name),
+      deviceName: device_name,
+      productId: product_id,
+      productName,
+      authType: 'device-token' as const,
+      result,
+      reason,
+      ip: request.ip,
+    });
+
+    try {
+      const result = await service.authenticate({
+        product_id,
+        device_name,
+        device_secret,
+        ip: request.ip,
+      });
+      void recordAuthLog(fastify.db, logEntry('success'), fastify.log);
+
+      const resp = success(result);
+      reply.code(resp.statusCode).send(resp.body);
+    } catch (err) {
+      if (err instanceof DeviceAuthError) {
+        void recordAuthLog(
+          fastify.db,
+          logEntry('failure', err.message),
+          fastify.log,
+        );
+      }
+      throw err;
+    }
   });
 
   // POST /api/v1/auth/platform-token - 获取平台API Token

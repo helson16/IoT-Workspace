@@ -16,7 +16,6 @@ import {
   DeviceNameConflictError,
   DeviceAuthError,
   ValidationError,
-  InternalError,
 } from '../shared/errors.js';
 import type {
   DeviceBasic,
@@ -44,7 +43,7 @@ function mapDeviceToBasic(device: any): DeviceBasic {
   };
 }
 
-function buildMqttConfig(
+export function buildMqttConfig(
   productId: string,
   deviceName: string,
   deviceSecret: string,
@@ -358,6 +357,7 @@ export class DeviceService {
       data: {
         status: 'online',
         lastLoginAt: new Date(),
+        ...(input.ip ? { lastIp: input.ip } : {}),
       },
     });
 
