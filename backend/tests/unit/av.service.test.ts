@@ -6,6 +6,7 @@ import {
   parseAvEvent,
   buildFileName,
   summarizeAvEvents,
+  buildHourlyTrend,
 } from '../../src/services/av.service.js';
 import { ValidationError } from '../../src/shared/errors.js';
 
@@ -224,5 +225,64 @@ describe('summarizeAvEvents', () => {
   it('todayStart 即事件时间本身(边界含)', () => {
     const s = summarizeAvEvents([row({ timestamp: TODAY_START })], TODAY_START);
     expect(s.today_events).toBe(1);
+  });
+});
+
+// ---------------- buildHourlyTrend ----------------
+
+describe('buildHourlyTrend', () => {
+  // 固定 now: 2026-09-26 12:30 UTC(所在小时桶 = 12:00)
+  const NOW = new Date('2026-09-26T12:30:00Z');
+
+  it('空集: 仍返回 hours+1 个全零桶, 标签为 HH:00(UTC)', () => {
+    const buckets = buildHourlyTrend([], 24, NOW);
+    expect(buckets).toHaveLength(25);
+    // 窗口 = [前一天 12:00, 今天 12:00](latest 取 now 所在整小时, 往前推 hours 桶)
+    expect(buckets[0]).toEqual({ hour: '12:00', recording: 0, snapshot: 0, playback: 0 });
+    expect(buckets[24]).toEqual({ hour: '12:00', recording: 0, snapshot: 0, playback: 0 });
+  });
+
+  it('按小时分桶累计三类事件', () => {
+    const buckets = buildHourlyTrend(
+      [
+        { event_type: 'recording', timestamp: new Date('2026-09-26T12:05:00Z') },
+        { event_type: 'recording', timestamp: new Date('2026-09-26T12:45:00Z') },
+        { event_type: 'snapshot', timestamp: new Date('2026-09-26T11:59:59Z') },
+        { event_type: 'playback', timestamp: new Date('2026-09-26T05:00:00Z') },
+      ],
+      24,
+      NOW,
+    );
+    const byHour = new Map(buckets.map((b) => [b.hour, b]));
+    expect(byHour.get('12:00')).toEqual({ hour: '12:00', recording: 2, snapshot: 0, playback: 0 });
+    expect(byHour.get('11:00')).toEqual({ hour: '11:00', recording: 0, snapshot: 1, playback: 0 });
+    expect(byHour.get('05:00')).toEqual({ hour: '05:00', recording: 0, snapshot: 0, playback: 1 });
+  });
+
+  it('窗口边界含: 恰好 24h 前整点(= earliest)的事件落入第一桶', () => {
+    const buckets = buildHourlyTrend(
+      [{ event_type: 'snapshot', timestamp: new Date('2026-09-25T12:00:00Z') }],
+      24,
+      NOW,
+    );
+    expect(buckets[0].snapshot).toBe(1);
+  });
+
+  it('窗口外事件被忽略(防御, 正常查询已过滤)', () => {
+    const buckets = buildHourlyTrend(
+      [
+        { event_type: 'snapshot', timestamp: new Date('2026-09-25T11:59:59Z') }, // 早于窗口左端
+        { event_type: 'snapshot', timestamp: new Date('2026-09-26T13:00:00Z') }, // 晚于 now 所在小时
+      ],
+      24,
+      NOW,
+    );
+    const total = buckets.reduce((n, b) => n + b.snapshot, 0);
+    expect(total).toBe(0);
+  });
+
+  it('hours=2 生成 3 桶且相邻小时连续', () => {
+    const buckets = buildHourlyTrend([], 2, NOW);
+    expect(buckets.map((b) => b.hour)).toEqual(['10:00', '11:00', '12:00']);
   });
 });

@@ -548,6 +548,18 @@ export interface AvEventItem {
   timestamp: string;
 }
 
+export interface AvTrendBucket {
+  hour: string; // 'HH:00' (UTC)
+  recording: number;
+  snapshot: number;
+  playback: number;
+}
+
+export interface AvTrendData {
+  hours: number;
+  buckets: AvTrendBucket[];
+}
+
 export interface AvEventQuery {
   event_type?: "all" | "recording" | "snapshot" | "playback";
   status?: "all" | "success" | "failed";
@@ -790,6 +802,7 @@ export const api = {
 
   // 音视频服务
   getAvStats: () => apiFetch<AvStats>("/api/v1/av/stats"),
+  getAvTrend: (hours = 24) => apiFetch<AvTrendData>(`/api/v1/av/trend?hours=${hours}`),
   getAvEvents: (query: AvEventQuery = {}) => {
     const params = new URLSearchParams();
     if (query.event_type) params.set("event_type", query.event_type);

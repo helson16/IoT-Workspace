@@ -66,6 +66,13 @@ export interface AvStats {
   device_count: number;
 }
 
+export interface AvTrendBucket {
+  hour: string; // 'HH:00'(UTC, 与 timestamp 列语义一致)
+  recording: number;
+  snapshot: number;
+  playback: number;
+}
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024; // 10GB
 const MAX_DURATION_SEC = 24 * 3600;
 
@@ -141,6 +148,42 @@ const FILE_EXTENSIONS: Record<AvEventType, string> = {
   snapshot: 'jpg',
   playback: 'mp4',
 };
+
+/**
+ * 按小时聚合 AV 事件为定长趋势桶(纯函数)。
+ * - 桶区间: [now - hours 小时, now](边界含), 共 hours+1 个桶, 无数据小时补零
+ * - hour 标签取桶起始小时的 'HH:00'(UTC, 与 timestamp 列语义一致)
+ */
+export function buildHourlyTrend(
+  rows: Array<{ event_type: string; timestamp: Date }>,
+  hours: number,
+  now: Date = new Date(),
+): AvTrendBucket[] {
+  const bucketMs = 3600 * 1000;
+  // 以整小时对齐: 最新桶 = now 所在小时, 最早桶 = now - hours 小时所在小时
+  const latest = Math.floor(now.getTime() / bucketMs) * bucketMs;
+  const earliest = latest - hours * bucketMs;
+
+  const buckets: AvTrendBucket[] = [];
+  const index = new Map<number, AvTrendBucket>();
+  for (let t = earliest; t <= latest; t += bucketMs) {
+    const b: AvTrendBucket = { hour: 'HH:00', recording: 0, snapshot: 0, playback: 0 };
+    const d = new Date(t);
+    b.hour = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
+    buckets.push(b);
+    index.set(t, b);
+  }
+
+  for (const row of rows) {
+    const t = Math.floor(row.timestamp.getTime() / bucketMs) * bucketMs;
+    const b = index.get(t);
+    if (!b) continue; // 窗口外(理论不出现, 防御)
+    if (row.event_type === 'recording') b.recording += 1;
+    else if (row.event_type === 'snapshot') b.snapshot += 1;
+    else if (row.event_type === 'playback') b.playback += 1;
+  }
+  return buckets;
+}
 
 /**
  * 设备未携带 file_name 时的确定性兜底文件名。
@@ -236,6 +279,25 @@ export class AvService {
     });
 
     return { received: normalized.length };
+  }
+
+  /** 小时趋势: SQL 窗口过滤(UTC now, 避 8h 偏移) + 纯函数补零分桶 */
+  async getTrend(hours: number): Promise<{ hours: number; buckets: AvTrendBucket[] }> {
+    const rows = await this.db.avEventLog.findMany({
+      where: {
+        timestamp: {
+          gte: new Date(Date.now() - hours * 3600 * 1000),
+        },
+      },
+      select: { eventType: true, timestamp: true },
+    });
+    return {
+      hours,
+      buckets: buildHourlyTrend(
+        rows.map((r) => ({ event_type: r.eventType, timestamp: r.timestamp })),
+        hours,
+      ),
+    };
   }
 
   /** 统计卡: 拉全量行后在 Node 侧聚合(数据量为事件流水级别, 规模可控) */
