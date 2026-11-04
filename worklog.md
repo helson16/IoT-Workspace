@@ -255,3 +255,29 @@ Stage Summary:
 - 云存服务成为第 9 个真实数据页面; 13 万条历史数据首次可视化, 智能分析从写死文案变为真实派生
 - 教训: ① timestamp without time zone 列的时区基准必须实测确认(now() vs 列值对比), $queryRaw 时间窗口与列基准不一致会静默偏移 8 小时; ② Prisma $queryRaw 模板中嵌 SQL 片段必须用 Prisma.sql 包装, 字符串插值会被当绑定参数
 - 范围外 known issue(未改): ops.routes.ts 既有 $queryRaw 用 now() - interval 开窗, 与 UTC wall time 列基准存在 8h 偏移, 属精度问题不影响形状展示, 留待后续统一修正
+
+---
+Task ID: 14
+Agent: Main Agent
+Task: TypeSafe 语义判断集成 — 自然语言 → 设备影子指令解析（后端端点，第 1 步）
+
+Work Log:
+- 调研: 装 @typesafe-ai/sdk@0.6.0 到 backend/ 并读 index.d.mts 核对设计文档 — noul/choice 签名一致; 补上设计未提的 SystemOneRequest.model / TypeSafeClientConfig.defaultModel / TYPESAFE_DEFAULT_MODEL、fetch 可注入、SystemOneResult.usage; 设计低估最坏延迟(SDK 默认 10s + maxRetries 2), 本实现收紧到 timeout 5000
+- 形态: select-instead-of-generate — 物模型属性清单是真实闭集, 模型只在闭集里选, 对错由 code 的 validateValue(dataType/spec) 判定; string 型 V1 一律澄清(不下发任意文本); 抽不到数值 span 也澄清
+- 请求编排: 一问同批(speculative fan-out)带 4 个判断 — intent_actionable / mentions_timing / mentions_multiple / target_property(候选集含 __none__ 兜底); 仅当 target_property 定下后才发第二问(值抽取依赖选中属性); 单次 350ms 量级
+- 四条护栏(都拦在取值解析之前, 命中即澄清, proposed 恒 null): ① 定时/条件不得降级为立即无条件执行(F-2, 唯一安全级缺陷); ② 多属性不得只写入其中一个(F-4); ③ 点名只读/不存在属性时不能说「这不是一条下发指令」(mentionedUnavailable); ①② 用同一手法, 同批 Noul 零额外延迟
+- 纯函数 + 单测: validateValue / extractValueSpans / isStepAligned / mentionedUnavailable / mentionsProperty / displayReason / alternativeHolders 全部纯函数化; step 对齐用除法 + 相对容差 STEP_EPSILON=1e-9(浮点取模不可靠), 不用 %
+- 安全: TYPESAFE_API_KEY 只从 backend/.env 读(process.env), 绝不进 src/ 或前端包; 刻意不开 TYPESAFE_LOG_LEVEL=debug — SDK 会打印未脱敏的请求体, 物模型 + 用户原话会进日志
+- 路由陷阱: 裸写 'command:parse' 被 find-my-way 解析成「静态前缀 + 名为 parse 的参数」, 会吞掉 /command、/commandXparse 等兄弟路由 → 改写成正则参数 :action(command:parse)
+- 用例表三轮真实 API(32 条 A–H, 用真实设备 prod-a1b2c3d4「智能温控器」执行, 不改动开发库): 1.1 修复前基线 → 1.2 补 F-2/F-3 → 1.3 补 F-1b/F-4/F-6; 每次调用记录响应里的 model 字段(三轮均为 jev-1.13.0)
+- 阈值标定(本仓库真实数据, 不照抄文档示例): CONFIDENCE_THRESHOLD 0.8 落在 [0.74, 0.92] 空档; TIMING_THRESHOLD 0.5 落在 [0.04, 0.94]; MULTIPLE_THRESHOLD 0.5 落在 [0.27, 0.98]; 三轮共 43 次调用, 中位数 351ms, 第 4 个问题进同一批请求 → 零额外往返
+- 撤销了自己最初的修复建议: F-1 曾建议「按值域可行性过滤候选集」, 反例「把温度设成40度」会把一次越界拒绝变成对另一个属性的合法写入, 且系统性偏向值域最宽的属性 → 改为只修提示文案(alternativeHolders 只给疑问句提示, 不参与放行决策)
+- 发现并记录 F-1–F-9; 已修 F-2/F-3/F-4/F-6/F-8; 未修 F-5(用例设计缺口)/F-7(简称匹配不到只读属性名)/F-9(hint 归因)
+- 范围: 只做后端端点, 不接前端、不改 shadow 路由(第 1 步范围)
+
+Stage Summary:
+- 质量门: backend tsc 0 / 178 单测通过(新增 command-parse.test.ts 79 条, 共 6 文件); lint 本轮未跑
+- 交付: POST /api/v1/devices/:deviceId/command:parse(只解析不写影子) + 6 篇设计/用例/实测文档(.ai-docs/designs/typesafe/)
+- 核心结论: 模型只做语义判断、对错交给 code 的确定性校验; 三条阈值都不是安全边界只是分流器, 安全来自「候选集组装 + validateValue + 抽不到数值就澄清」三层
+- 教训: ① SDK 把 answers 声明成 total mapped type, 编译期承诺「每个问题都有答案」是虚假保证 —— 网络返回值该兜底还得兜底(少一个答案就是 TypeError → 500), 兜底方向统一取「多澄清」; ② 被 confidence 偶然拦下的用例不算安全, 要问「拦下它的理由」与「风险」是否同源, 同源就补结构性规则; ③ 单测绿 ≠ 真实数据已验证 — F-3 单测过了但实跑根本没触发(设备命名对不上)
+- 待办: F-1 根因(两个温度属性造成的属性歧义)未修, 只改了提示文案; 彻底修法(候选集带更强区分信息 / 对歧义属性二次确认)留待后续
