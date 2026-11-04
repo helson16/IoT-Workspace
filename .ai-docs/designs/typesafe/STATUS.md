@@ -136,9 +136,10 @@ F-10 之前无法区分"上游拒绝"与别的失败，现在能了（502/50003 
 - 结果：`tsc` **0 error** ｜ **183 passed (6 files)**，其中 `command-parse.test.ts` **84** 条 ｜
   `lint` **0 error / 109 warning**
 - 日期：**2026-09-23**，由 TA 在 F-10 修复后实测（**这是当前工作区的真实值**）。
-- **dry-run 本轮未取得可信结果**：脚本本轮**未改动**；试图复跑时命令块里连 `!` 一起被粘贴，
-  shell 把行首 `!` 当取反运算符，退出码被反转，且表格输出未被捕获。
-  **不得据那个 `EXIT=1` 推断脚本坏了** —— 脚本最后一次可信实测是上一轮的**退出码 0 / 32 条**。
+- 同轮另跑：`npx tsx --env-file=.env tools/case-table.mts --dry-run` → 退出码 **0**，列出 **32** 条用例（42 行输出）。
+  注：**第一次尝试的 `EXIT=1` 是假信号** —— 命令块连同 `!` 一起被粘贴，shell 把行首 `!` 当取反运算符
+  反转了退出码，且输出未被捕获；重跑后得到上面的结果。**脚本本轮未改动**，也没坏。
+  教训见「下一步」第 5 条与 worklog Task 19。
 - ⚠️ **覆盖范围提醒（2026-09-23 实测 `package.json` / `tsconfig.json` 得出）**：
   `typecheck` 是 `tsc --noEmit`，而 tsconfig `include` **只有 `src/**/*.ts`**（且 `exclude` 了 `tests`）；
   `lint` 是 `eslint src/ --ext .ts`。也就是说 **`tests/` 与 `tools/` 都不在质量门里** ——
