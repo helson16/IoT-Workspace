@@ -211,3 +211,24 @@ Stage Summary:
 - 质量门： lint 0 / 双端 tsc 0 / 54 单测通过
 - 监控运维成为第 7 个真实数据页面；统一日志流打通 4 类数据源
 - 教训： 多分支 UNION 的所有列类型必须显式对齐(::text)；数据生产方(模拟器)的枚举值要与 schema 标准一致，历史脏值需消费端兼容
+
+---
+Task ID: 12
+Agent: Main Agent
+Task: 消息通信 — 规则引擎转发全栈（消息队列页面接入真实数据）
+
+Work Log:
+- DB: Prisma +ForwardRule(cuid id, name unique, status, productId, messageType, filter JSON{identifiers/eventTypes}, targetType http|republish, targetConfig JSON) + ForwardLog(冗余 ruleName 防删除后日志失义, topic, payload, result, latencyMs, errorMsg)
+- 后端 rule-engine.service.ts: 纯函数拆分 matchRules(产品+类型+启用+筛选) / buildTopic($thing/up 真实 topic 组装) / executeTarget(http: POST JSON+5s AbortController 超时+fetchImpl 可注入; republish: 无 EMQX 模拟成功) / dispatch(全程兜底不抛错, 转发失败只落 failed 日志不阻断上报主链路)
+- internal.routes.ts: property-report/event-report 各挂 fire-and-forget dispatch; +POST /api/internal/echo 回显端点(演示 HTTP 转发目标)
+- rule.routes.ts 8 端点: 规则 CRUD + PATCH status 启停 + logs 分页筛选(result/message_type/rule_id, 日志补 device_name 解析) + stats 总览 + topics 真实聚合(property_history+event_logs 按产品 UNION, $queryRaw)
+- app.ts 修复前置隐患: rateLimit 加 allowList 豁免 /api/internal/* — dev 全部流量共享 127.0.0.1 一个 100/min 桶, 规则引擎转发回环会误伤上报主链路
+- 前端: client.ts +8 方法与 5 类型; message-queue-page 全量重写 — 4 指标卡(规则/启用/今日转发/成功率) + 3 Tab(转发规则表格含 Switch 启停与 CRUD 对话框: 产品下拉/类型联动筛选 label/URL 校验; 转发日志 5s 自动刷新+结果筛选+分页; 消息主题真实聚合)
+- 单测 rule-engine.test.ts 21 用例: matchRules 8 场景(禁用/产品/类型/筛选交集/eventTypes) + buildTopic + executeTarget 7 场景(http 2xx/非2xx/网络异常/无URL/republish/未知类型/请求体断言) + dispatch 4 场景(匹配落日志/无匹配/失败不抛错/DB 异常兜底)
+- 修复循环 1 轮: topics 原生 SQL 列名 — Prisma 早期模型(deviceId/productId)未 @map 下划线, 实际列是带引号驼峰, 三次修正 h."deviceId"/d."productId"/"timestamp"
+- 浏览器 E2E 全过: 指标卡实时(今日转发 88→130)、规则表真实数据、UI 建事件规则(下拉联动/动态占位符)、启停生效(禁用后 API 计数冻结 116, 重启恢复增长)、编辑预填+描述更新、删除后日志保留规则名(5 条 event 日志仍显示「高温事件转发」)、属性转发每 5s 实时(2-4ms)、事件转发 warn 筛选 E2E(3 条 success)、消息主题 77,405 条真实聚合、console 0 错误 0 警告
+
+Stage Summary:
+- 质量门: lint 0 / 双端 tsc 0 / 75 单测通过(新增 21)
+- 消息通信成为第 8 个真实数据页面; 规则引擎完整闭环: 上报→匹配→转发→日志→展示
+- 教训: ① prisma generate 后 IDE TS server 缓存滞后报「模型不存在」假错, 以 CLI tsc 为 ground truth; ② 原生 SQL 必须先 \d 确认实际列名再写; ③ 新增内部回环流量前先审视 rate limit 单桶容量

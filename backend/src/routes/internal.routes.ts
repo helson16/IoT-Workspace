@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config/index.js';
 import { ShadowService } from '../services/shadow.service.js';
+import { RuleEngineService } from '../services/rule-engine.service.js';
 import { thingModelValidator } from '../shared/validator.js';
-import { success, successCreated } from '../shared/response.js';
-import { UnauthorizedError, DeviceNotFoundError, PropertyValueInvalidError } from '../shared/errors.js';
+import { success } from '../shared/response.js';
+import { UnauthorizedError, PropertyValueInvalidError } from '../shared/errors.js';
 
 export default async function internalRoutes(fastify: FastifyInstance) {
   // Internal auth middleware
@@ -17,6 +18,8 @@ export default async function internalRoutes(fastify: FastifyInstance) {
       throw new UnauthorizedError('内部认证失败');
     }
   };
+
+  const ruleEngine = new RuleEngineService(fastify.db);
 
   // POST /api/internal/mqtt/property-report - 设备属性上报回调
   fastify.post('/api/internal/mqtt/property-report', {
@@ -89,6 +92,21 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     // 5. Refresh device online status in Redis
     await fastify.setDeviceOnline(device_id);
 
+    // 6. 规则引擎分发(失败不影响上报主链路)
+    const device = await fastify.db.device.findUnique({
+      where: { deviceId: device_id },
+      select: { deviceName: true, productId: true },
+    });
+    if (device) {
+      void ruleEngine.dispatch({
+        productId: device.productId,
+        deviceId: device_id,
+        deviceName: device.deviceName,
+        messageType: 'property',
+        payload: params,
+      });
+    }
+
     const resp = success({ received: true, properties_count: Object.keys(params).length });
     reply.code(resp.statusCode).send(resp.body);
   });
@@ -139,6 +157,25 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     });
 
     await fastify.setDeviceOnline(device_id);
+
+    // 规则引擎分发(失败不影响上报主链路)
+    const device = await fastify.db.device.findUnique({
+      where: { deviceId: device_id },
+      select: { deviceName: true, productId: true },
+    });
+    if (device) {
+      void ruleEngine.dispatch({
+        productId: device.productId,
+        deviceId: device_id,
+        deviceName: device.deviceName,
+        messageType: 'event',
+        payload: {
+          eventId: event_id,
+          eventType: event_type,
+          outputParams: output_params,
+        },
+      });
+    }
 
     const resp = success({ received: true, event_id });
     reply.code(resp.statusCode).send(resp.body);
@@ -286,6 +323,21 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     await fastify.delDeviceOnline(device_id);
 
     const resp = success({ status: 'offline', device_id });
+    reply.code(resp.statusCode).send(resp.body);
+  });
+
+  // ============================================================
+  // POST /api/internal/echo - 转发目标回显端点
+  // ============================================================
+  // 作为规则引擎 HTTP 转发的演示/联调目标, 原样返回收到的载荷。
+  // 受 X-Internal-Secret 保护; 演示规则转发的 URL 需附带该 Header 时,
+  // 可由目标方自行鉴权(本端点仅回显, 不产生副作用)。
+  // 注: 规则引擎转发的请求不含 X-Internal-Secret, 此处对 echo 放宽鉴权
+  // 仅限 dev 演示用途。
+  // ============================================================
+  fastify.post('/api/internal/echo', async (request, reply) => {
+    const body = request.body as Record<string, unknown>;
+    const resp = success({ received: true, echo: body, received_at: new Date().toISOString() });
     reply.code(resp.statusCode).send(resp.body);
   });
 

@@ -255,6 +255,67 @@ export interface GroupMemberDevice {
   lastLoginAt: string | null;
 }
 
+// ---------------- 消息转发(规则引擎) ----------------
+
+export interface ForwardRuleItem {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string; // enabled | disabled
+  productId: string;
+  productName: string;
+  messageType: string; // property | event
+  filter: { identifiers?: string[]; eventTypes?: string[] };
+  targetType: string; // http | republish
+  targetConfig: { url?: string; topic?: string };
+  createdAt: string;
+  updatedAt: string;
+  todayCount: number;
+  todaySuccessRate: number | null; // 0-100, null=今日无转发
+}
+
+export interface ForwardRuleInput {
+  name: string;
+  description?: string;
+  product_id: string;
+  message_type: string;
+  filter?: { identifiers?: string[]; eventTypes?: string[] };
+  target_type: string;
+  target_config: { url?: string; topic?: string };
+  status?: string;
+}
+
+export interface ForwardLogItem {
+  id: string;
+  rule_id: string;
+  rule_name: string;
+  device_id: string;
+  device_name: string;
+  message_type: string;
+  topic: string;
+  payload: Record<string, unknown>;
+  result: string; // success | failed
+  error_msg: string | null;
+  latency_ms: number;
+  time: string;
+}
+
+export interface ForwardStats {
+  rule_count: number;
+  enabled_count: number;
+  today_forward_count: number;
+  today_success_rate: number | null;
+}
+
+export interface MessageTopicItem {
+  topic: string;
+  type: string;
+  product_id: string;
+  product_name: string;
+  messages: number;
+  last_active: string;
+}
+
 // ---------------- 监控运维 ----------------
 
 export interface OpsMetrics {
@@ -416,4 +477,40 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ state: { desired }, version }),
     }),
+
+  // 消息转发(规则引擎)
+  getForwardRules: () => apiFetch<ForwardRuleItem[]>("/api/v1/forward-rules"),
+  createForwardRule: (body: ForwardRuleInput) =>
+    apiFetch<ForwardRuleItem>("/api/v1/forward-rules", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateForwardRule: (ruleId: string, body: ForwardRuleInput) =>
+    apiFetch<ForwardRuleItem>(`/api/v1/forward-rules/${ruleId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  toggleForwardRule: (ruleId: string, status: string) =>
+    apiFetch<ForwardRuleItem>(`/api/v1/forward-rules/${ruleId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  deleteForwardRule: (ruleId: string) =>
+    apiFetch<null>(`/api/v1/forward-rules/${ruleId}`, { method: "DELETE" }),
+  getForwardLogs: (query: { result?: string; rule_id?: string; page?: number; page_size?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (query.result) params.set("result", query.result);
+    if (query.rule_id) params.set("rule_id", query.rule_id);
+    if (query.page) params.set("page", String(query.page));
+    if (query.page_size) params.set("page_size", String(query.page_size));
+    const qs = params.toString();
+    return apiFetch<{
+      total: number;
+      page: number;
+      page_size: number;
+      items: ForwardLogItem[];
+    }>(`/api/v1/forward-rules/logs${qs ? `?${qs}` : ""}`);
+  },
+  getForwardStats: () => apiFetch<ForwardStats>("/api/v1/forward-rules/stats"),
+  getMessageTopics: () => apiFetch<MessageTopicItem[]>("/api/v1/forward-rules/topics"),
 };
