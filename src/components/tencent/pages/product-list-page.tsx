@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, type Product } from "@/lib/api/client";
+import { useAppStore } from "@/stores/app-store";
 import {
   Search, RefreshCw, Download, Plus, MoreHorizontal, Trash2,
-  Monitor, ChevronRight, X,
+  Monitor, ChevronRight, X, FileCode2,
 } from "lucide-react";
 
 const nodeTypeLabel: Record<string, string> = {
@@ -25,6 +26,7 @@ export function ProductListPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const { setSelectedProductId } = useAppStore();
 
   // 表单状态
   const [form, setForm] = useState({
@@ -205,6 +207,13 @@ export function ProductListPage() {
                     <td className="text-[13px] text-[#888]">{formatDate(p.createdAt)}</td>
                     <td>
                       <div className="flex items-center gap-1">
+                        <button
+                          className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors"
+                          title="物模型定义"
+                          onClick={() => setSelectedProductId(p.productId)}
+                        >
+                          <FileCode2 className="w-4 h-4 text-[#999] hover:text-[#0052D9]" />
+                        </button>
                         <button
                           className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors"
                           title="删除产品"

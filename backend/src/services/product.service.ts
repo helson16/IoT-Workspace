@@ -1,6 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { generateProductId } from '../shared/crypto.js';
-import { thingModelValidator } from '../shared/validator.js';
+import { thingModelValidator, toSchemaThingModel } from '../shared/validator.js';
 import {
   ProductNotFoundError,
   ThingModelInvalidError,
@@ -239,7 +239,10 @@ export class ProductService {
     productId: string,
     thingModel: any,
   ): Promise<ThingModelSnapshot> {
-    const result = thingModelValidator.validateDefinition(thingModel);
+    // API 风格(identifier/dataType/accessMode) → schema 风格(id/type/mode)后再校验
+    const result = thingModelValidator.validateDefinition(
+      toSchemaThingModel(thingModel),
+    );
     if (!result.valid) {
       throw new ThingModelInvalidError(
         'Thing model definition is invalid',

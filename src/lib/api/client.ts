@@ -11,10 +11,12 @@ const APP_SECRET = process.env.NEXT_PUBLIC_APP_SECRET || "iot-explorer-app-secre
 
 export class ApiError extends Error {
   code: number;
-  constructor(message: string, code: number) {
+  details?: Array<{ field: string; message: string }>;
+  constructor(message: string, code: number, details?: Array<{ field: string; message: string }>) {
     super(message);
     this.name = "ApiError";
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -95,7 +97,7 @@ export async function apiFetch<T>(
   }))) as ApiEnvelope<T>;
 
   if (!res.ok || json.code !== 0) {
-    throw new ApiError(json.message || `请求失败 (HTTP ${res.status})`, json.code ?? -1);
+    throw new ApiError(json.message || `请求失败 (HTTP ${res.status})`, json.code ?? -1, json.details);
   }
   return json.data;
 }
@@ -181,6 +183,57 @@ export interface OverviewStats {
   recent_activity: ActivityItem[];
 }
 
+// ---------------- 物模型 ----------------
+
+export interface ThingModelProperty {
+  id?: number;
+  identifier: string;
+  name: string;
+  dataType: string;
+  accessMode: string;
+  description?: string | null;
+  spec: Record<string, unknown>;
+  required?: boolean;
+  sortOrder?: number;
+}
+
+export interface ThingModelEventParam {
+  identifier: string;
+  name: string;
+  dataType: string;
+  spec?: Record<string, unknown>;
+}
+
+export interface ThingModelEvent {
+  id?: number;
+  identifier: string;
+  name: string;
+  eventType: string;
+  description?: string | null;
+  outputParams: ThingModelEventParam[];
+  sortOrder?: number;
+}
+
+export interface ThingModelAction {
+  id?: number;
+  identifier: string;
+  name: string;
+  description?: string | null;
+  inputParams: ThingModelEventParam[];
+  outputParams: ThingModelEventParam[];
+  asyncFlag?: boolean;
+  callStrategy?: string;
+  sortOrder?: number;
+}
+
+export interface ThingModelSnapshot {
+  productId: string;
+  version: number;
+  properties: ThingModelProperty[];
+  events: ThingModelEvent[];
+  actions: ThingModelAction[];
+}
+
 // ---------------- API 方法 ----------------
 
 export const api = {
@@ -207,6 +260,24 @@ export const api = {
     }),
   deleteProduct: (productId: string) =>
     apiFetch<null>(`/api/v1/products/${productId}`, { method: "DELETE" }),
+
+  // 物模型
+  getThingModel: (productId: string) =>
+    apiFetch<ThingModelSnapshot>(`/api/v1/products/${productId}/thing-model`),
+  updateThingModel: (
+    productId: string,
+    body: {
+      version: string;
+      profile?: Record<string, unknown>;
+      properties: ThingModelProperty[];
+      events: ThingModelEvent[];
+      actions: ThingModelAction[];
+    },
+  ) =>
+    apiFetch<ThingModelSnapshot>(`/api/v1/products/${productId}/thing-model`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 
   // 设备(全局)
   getDevices: (params: {

@@ -185,6 +185,45 @@ function validateValueByType(
   }
 }
 
+/**
+ * API 风格(identifier/dataType/accessMode/description/eventType)物模型
+ * 转换为 JSON Schema 风格(id/type/mode/desc/type)用于校验。
+ * spec 结构两种风格一致, 原样透传。
+ */
+export function toSchemaThingModel(model: unknown): unknown {
+  const m = (model ?? {}) as Record<string, any>;
+  const mapProp = (p: Record<string, any>) => ({
+    id: p.identifier,
+    name: p.name,
+    ...(p.description != null ? { desc: p.description } : {}),
+    type: p.dataType,
+    mode: p.accessMode,
+    required: p.required ?? false,
+    spec: p.spec ?? {},
+  });
+  const mapEvent = (e: Record<string, any>) => ({
+    id: e.identifier,
+    name: e.name,
+    ...(e.description != null ? { desc: e.description } : {}),
+    type: e.eventType ?? 'info',
+    outputParams: e.outputParams ?? [],
+  });
+  const mapAction = (a: Record<string, any>) => ({
+    id: a.identifier,
+    name: a.name,
+    ...(a.description != null ? { desc: a.description } : {}),
+    inputParams: a.inputParams ?? [],
+    outputParams: a.outputParams ?? [],
+  });
+  return {
+    version: m.version,
+    ...(m.profile != null ? { profile: m.profile } : {}),
+    properties: (Array.isArray(m.properties) ? m.properties : []).map(mapProp),
+    events: (Array.isArray(m.events) ? m.events : []).map(mapEvent),
+    actions: (Array.isArray(m.actions) ? m.actions : []).map(mapAction),
+  };
+}
+
 export class ThingModelValidator {
   private readonly definitionValidator: InstanceType<typeof Ajv>;
   private readonly runtimeValidator: InstanceType<typeof Ajv>;
