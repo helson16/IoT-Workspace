@@ -162,6 +162,35 @@ export interface ShadowDocument {
   };
   metadata: unknown;
   version: number;
+  /** desired 专属版本 (乐观锁用)。PUT desired 的 version 校验它; 可选容忍旧缓存 */
+  desiredVersion?: number;
+}
+
+/** POST /devices/:id/command:parse 的响应。契约见 .ai-docs/designs/typesafe/da-contract.md */
+export interface ParseCommandResult {
+  /** 校验通过、可预填进 desired 的键值对; 失败为 null */
+  proposed: Record<string, unknown> | null;
+  explanation: string;
+  target_property: string | null;
+  /** 重载字段: 护栏命中时装护栏置信度, 正常路径装属性置信度 — 展示请用 meta.judgments */
+  confidence: number;
+  rejected: Array<Record<string, unknown>>;
+  unknown: string[];
+  needs_clarification: boolean;
+  hint: string | null;
+  meta: {
+    models: Array<string | null>;
+    timings_ms: number[];
+    candidate_count: number;
+    value_spans: string[];
+    /** 未调用模型就短路的路径没有该字段 (如"无可写属性") */
+    judgments?: {
+      intent_actionable: boolean;
+      mentions_timing: boolean;
+      mentions_multiple: boolean;
+      target_property_confidence: number;
+    };
+  };
 }
 
 export interface TrendPoint {
@@ -738,6 +767,13 @@ export const api = {
     apiFetch<ShadowDocument>(`/api/v1/shadows/${deviceId}`, {
       method: "PUT",
       body: JSON.stringify({ state: { desired }, version }),
+    }),
+
+  // 自然语言指令解析 (TypeSafe)
+  parseDeviceCommand: (deviceId: string, text: string) =>
+    apiFetch<ParseCommandResult>(`/api/v1/devices/${deviceId}/command:parse`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
     }),
 
   // 消息转发(规则引擎)

@@ -93,6 +93,8 @@ export interface ShadowDocument {
     desired: Record<string, { timestamp: number }>;
   };
   version: number;
+  /** desired 专属版本 (乐观锁用)。PUT desired 的 version 字段校验的是它, 不是总 version */
+  desiredVersion: number;
   timestamp: number;
 }
 

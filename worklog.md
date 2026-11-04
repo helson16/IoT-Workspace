@@ -704,3 +704,25 @@ Work Log:
 Stage Summary:
 - 工作区遗留未提交改动清零；「未完成」第 1 条（G5 期望值决策）关闭，信号机制恢复（退出码恒 1 的固定噪声消除）
 - 下一个 TA 线程入口: F-1 双温度属性歧义（候选集区分信息 / 二次确认，待设计）
+
+---
+Task ID: 22
+Agent: Main Agent
+Task: TypeSafe 前端接入 — 设备详情页自然语言指令下发(双 tab Dialog) + 影子乐观锁字段修复
+
+Work Log:
+- 计划: .trae/documents/typesafe-frontend-integration.md (用户批准)
+- client.ts: 新增 ParseCommandResult 类型 + parseDeviceCommand 方法 (POST /devices/:id/command:parse)
+- device-detail-page.tsx: 「下发指令」Dialog 升级为双 tab —— 智能指令(默认): 自然语言→解析→确认卡(中文名/值/单位/explanation/judgments 置信度)→人工「确认下发」走既有 desiredMutation; JSON tab 原样保留
+- 契约遵守(da-contract.md): 502/50003→蓝底「解析服务暂时不可用」(信息色非红, 判 code 不判文案); needs_clarification→蓝底 hint 非弹窗; proposed 只能对象/null; 人工确认后才写影子; Enter 触发解析不触发下发; 改输入清旧确认卡
+- E2E 发现既有缺陷: 下发报「Desired version conflict: expected 315049, actual 0」→ 根因是前端把影子总 version(随上报递增)当乐观锁值传, 而后端校验的是 desiredVersion(desired 专属, GET 响应却不返回该字段) —— 前后端契约断裂, 属既有 bug 非本次引入
+- 修复: GET shadow / PUT desired / updateReported 三处响应构造加 desiredVersion 字段(types + shadow.service, 含旧 Redis 缓存 ?? 0 兜底); 前端 ShadowDocument 加 desiredVersion?, desiredMutation 改传 shadow?.desiredVersion ?? 0
+- E2E 重验全 PASS: JSON 下发 target_temperature:25 → ✓ 提示 + Dialog 自动关 + desired/delta 区正确显示; 上次「JSON tab 面板为空」确认为 Radix hidden 属性导致的快照误判(用 evaluate 精确核实渲染正常); 测试后 DELETE desired 恢复夹具干净
+- 环境发现: TypeSafe 上游返回 451 "not available in your region"(区域限制, 官网正常 200) —— 智能解析当前不可用, 但恰好实测验证了 502/50003 分支文案渲染正确; 该环境变化影响 TA 工作流(整表实跑会全跳过), 需知会 TA 线程
+- 质量门: backend tsc 0 error / 273 passed (11 files) / lint 0; 前端 tsc 0 error
+- 后端进程在会话中意外退出一次, 已重启(npm run dev, 日志 /tmp/backend-dev.log)
+
+Stage Summary:
+- TypeSafe 端到端闭环: 自然语言→解析→确认→下发, 前端接入完成(智能解析 UI 就绪, 待上游恢复即可用)
+- 修复既有影子乐观锁契约断裂(desiredVersion 字段缺失), E2E 全链路验证通过
+- 交叉发现: TypeSafe 451 区域限制(影响 TA 用例表实跑, 待 TA 线程确认)
