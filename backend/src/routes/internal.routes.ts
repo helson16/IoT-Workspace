@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { config } from '../config/index.js';
 import { ShadowService } from '../services/shadow.service.js';
 import { RuleEngineService } from '../services/rule-engine.service.js';
+import { EmqxBridgeService } from '../services/emqx-bridge.service.js';
 import { recordAuthLog } from '../services/security.service.js';
 import { AvService } from '../services/av.service.js';
 import { thingModelValidator } from '../shared/validator.js';
@@ -36,6 +37,48 @@ export function parseMqttUsername(username: unknown): { productId: string; devic
   };
 }
 
+/**
+ * EMQX HTTP Authorizer 的 topic 权限判定(纯函数, 可单测)。
+ *
+ * 语义(DESIGN.md §3.2 $thing 体系):
+ * - publish: 只允许设备自己的 4 个上行 topic(全等匹配)
+ * - subscribe: 只允许设备自己的下行 topic 前缀(startsWith, 放行 /republish 等后缀)
+ * - username 非设备格式 → 'ignore'(交给 EMQX authorization 链的下一 source,
+ *   由 file 兜底规则放行 dashboard 等内部客户端)
+ * - 其余一律 deny
+ */
+export function checkTopicAcl(
+  username: unknown,
+  topic: unknown,
+  action: unknown,
+): 'allow' | 'deny' | 'ignore' {
+  const parsed = parseMqttUsername(username);
+  if (!parsed || typeof topic !== 'string' || typeof action !== 'string') return 'ignore';
+  const { productId, deviceName } = parsed;
+  const own = `${productId}/${deviceName}`;
+
+  if (action === 'publish') {
+    const allowed = [
+      `$thing/up/property/${own}`,
+      `$thing/up/event/${own}`,
+      `$shadow/update/${own}`,
+      `$av/up/event/${own}`,
+    ];
+    return allowed.includes(topic) ? 'allow' : 'deny';
+  }
+
+  if (action === 'subscribe') {
+    const prefixes = [
+      `$thing/down/property/${own}`,
+      `$thing/down/action/${own}`,
+      `$shadow/get/accepted/${own}`,
+    ];
+    return prefixes.some((p) => topic.startsWith(p)) ? 'allow' : 'deny';
+  }
+
+  return 'deny';
+}
+
 type DbLike = { device: { findUnique: (args: any) => Promise<{ status: string } | null> } };
 
 /** 回调前置守卫: 设备存在且被禁用则 403 */
@@ -62,7 +105,13 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     }
   };
 
-  const ruleEngine = new RuleEngineService(fastify.db);
+  // republish 经 EMQX 管理 API 真实重发布(未配置 API key 时 bridge 内部 no-op, 规则将落 failed 日志)
+  const emqxBridge = new EmqxBridgeService();
+  const ruleEngine = new RuleEngineService(
+    fastify.db,
+    fetch,
+    (topic, payload) => emqxBridge.publish(topic, payload, fastify.log),
+  );
 
   /**
    * 定位回调目标设备(两种来源二选一, device_id 优先保持旧模拟器形状兼容):
@@ -534,6 +583,54 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     const body = request.body as Record<string, unknown>;
     const resp = success({ received: true, echo: body, received_at: new Date().toISOString() });
     reply.code(resp.statusCode).send(resp.body);
+  });
+
+  // ============================================================
+  // POST /api/internal/mqtt/acl - EMQX HTTP Authorizer Hook
+  // ============================================================
+  // EMQX 在设备 PUBLISH/SUBSCRIBE 时调用(配置于 authorization source,
+  // 见 tools/emqx-setup.mts 的 ensureAcl; username 格式同 auth hook)。
+  // 响应约定: HTTP 200 + {"result":"allow"|"deny"|"ignore"},
+  // 非 200 或异常一律按 ignore 处理 —— 交给 authorization 链下一 source(file 兜底),
+  // 防后端故障把 dashboard 等非设备客户端误拒(authn 已 fail-closed, 连接层有兜底)。
+  // ============================================================
+  fastify.post('/api/internal/mqtt/acl', {
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          username: { type: 'string' },
+          topic: { type: 'string' },
+          action: { type: 'string' },
+          clientid: { type: 'string' },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const result: { result: 'allow' | 'deny' | 'ignore' } = { result: 'ignore' };
+    try {
+      // 1. 校验 X-Internal-Secret(失败按 ignore 交回链兜底, 不做 401)
+      const secret = request.headers['x-internal-secret'];
+      const { timingSafeEqual } = await import('../shared/crypto.js');
+      if (
+        !secret ||
+        !config.internalSecret ||
+        !timingSafeEqual(String(secret), config.internalSecret)
+      ) {
+        fastify.log.warn({ clientid: (request.body as any)?.clientid }, 'EMQX acl hook: bad internal secret');
+        reply.code(200).send(result);
+        return;
+      }
+
+      // 2. 纯函数判定 topic 权限
+      const { username, topic, action } = request.body as any;
+      result.result = checkTopicAcl(username, topic, action);
+      fastify.log.debug({ username, topic, action, result: result.result }, 'EMQX acl verdict');
+    } catch (err) {
+      // 任何异常按 ignore 处理, 不抛错(EMQX 视非 200/异常为 ignore)
+      fastify.log.warn({ err }, 'EMQX acl hook failed');
+    }
+    reply.code(200).send(result);
   });
 
   // ============================================================

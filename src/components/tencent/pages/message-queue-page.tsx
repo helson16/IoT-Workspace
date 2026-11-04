@@ -216,6 +216,9 @@ export function MessageQueuePage() {
     if (form.targetType === "republish" && !form.topic.trim()) {
       return setFormError("请填写重新发布的 Topic");
     }
+    if (form.targetType === "republish" && /[+#]/.test(form.topic.trim())) {
+      return setFormError("目标 Topic 不能包含 MQTT 通配符 + 或 #");
+    }
     setFormError("");
     saveMutation.mutate();
   };

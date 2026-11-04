@@ -165,13 +165,98 @@ describe('executeTarget', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('republish 目标模拟成功', async () => {
+  it('republish 未注入 publishImpl 返回 failed', async () => {
     const outcome = await executeTarget(
       makeRule({ targetType: 'republish', targetConfig: { topic: '$thing/down/x/y' } }),
       makeMsg(),
       vi.fn(),
     );
+    expect(outcome.result).toBe('failed');
+    expect(outcome.errorMsg).toContain('EMQX bridge 未配置');
+  });
+
+  it('republish 成功: publishImpl 收到替换后的 topic 与转发信封', async () => {
+    const publishImpl = vi.fn(async () => true);
+    const outcome = await executeTarget(
+      makeRule({
+        targetType: 'republish',
+        targetConfig: { topic: '$thing/down/{productId}/{deviceName}/republish' },
+      }),
+      makeMsg(),
+      vi.fn(),
+      publishImpl,
+    );
     expect(outcome.result).toBe('success');
+    expect(outcome.errorMsg).toBeNull();
+    expect(publishImpl).toHaveBeenCalledWith(
+      '$thing/down/prod-a1b2c3d4/dev001/republish',
+      expect.objectContaining({
+        rule_id: 'rule-1',
+        device_name: 'dev001',
+        product_id: 'prod-a1b2c3d4',
+        message_type: 'property',
+        topic: '$thing/up/prod-a1b2c3d4/dev001/property/post',
+      }),
+    );
+  });
+
+  it('republish 信封与 http 分支形状一致(buildForwardEnvelope)', async () => {
+    const publishImpl = vi.fn(async () => true);
+    await executeTarget(
+      makeRule({ targetType: 'republish', targetConfig: { topic: 't/1' } }),
+      makeMsg(),
+      vi.fn(),
+      publishImpl,
+    );
+    const [, envelope] = publishImpl.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect(Object.keys(envelope).sort()).toEqual(
+      [
+        'device_id',
+        'device_name',
+        'forwarded_at',
+        'message_type',
+        'payload',
+        'product_id',
+        'rule_id',
+        'rule_name',
+        'topic',
+      ].sort(),
+    );
+  });
+
+  it('republish publishImpl 返回 false 返回 failed', async () => {
+    const outcome = await executeTarget(
+      makeRule({ targetType: 'republish', targetConfig: { topic: 't/1' } }),
+      makeMsg(),
+      vi.fn(),
+      async () => false,
+    );
+    expect(outcome.result).toBe('failed');
+    expect(outcome.errorMsg).toContain('重发布失败');
+  });
+
+  it('republish 目标含 MQTT 通配符返回 failed', async () => {
+    const publishImpl = vi.fn(async () => true);
+    const outcome = await executeTarget(
+      makeRule({ targetType: 'republish', targetConfig: { topic: '$thing/down/#' } }),
+      makeMsg(),
+      vi.fn(),
+      publishImpl,
+    );
+    expect(outcome.result).toBe('failed');
+    expect(outcome.errorMsg).toContain('通配符');
+    expect(publishImpl).not.toHaveBeenCalled();
+  });
+
+  it('republish 未配置 topic 返回 failed', async () => {
+    const outcome = await executeTarget(
+      makeRule({ targetType: 'republish', targetConfig: {} }),
+      makeMsg(),
+      vi.fn(),
+      async () => true,
+    );
+    expect(outcome.result).toBe('failed');
+    expect(outcome.errorMsg).toContain('未配置目标 Topic');
   });
 
   it('未知目标类型返回 failed', async () => {

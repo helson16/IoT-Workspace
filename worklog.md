@@ -748,3 +748,23 @@ Stage Summary:
 - EMQX 配置全脚本化且幂等(可重跑/换环境可复现); API key/secret 仅存 backend/.env 未入库
 - 模拟器保留 MQTT/HTTP 双模式, http 为无 EMQX 环境的回退通道
 - 计划内未做(后续按需): TLS/ACL/EMQX 集群监控/rule-engine republish 真实化/action 下行调用链路
+
+---
+Task ID: 24
+Agent: Main Agent
+Task: TLS/ACL 与 rule-engine republish 真实化 — 设备级 topic 权限 + 自签证书 mqtts + 真实重发布
+
+Work Log:
+- 计划: .trae/documents/emqx-tls-acl-republish.md (用户批准); 明确不做: mTLS/file 兜底收紧/republish payload 模板列/设备级 ACL 表/关闭 1883 明文
+- P0 republish 真实化: rule-engine.service 抽 buildForwardEnvelope(http/republish 共享信封: rule_id/rule_name/device_id/device_name/product_id/message_type/topic/payload/forwarded_at), executeTarget 注入 publishImpl(EmqxBridge 管理 API publish), 删「模拟成功」分支; 目标 topic 占位符 {productId}/{deviceName} 替换 + 通配符 +/# 拒绝; internal.routes 注入 emqxBridge 实例
+- P1 ACL: checkTopicAcl 纯函数(pub 全等匹配 4 个上行 topic, sub startsWith 3 个下行前缀, 解析失败/非设备身份→ignore 交 file 兜底, 未知 action→deny) + POST /api/internal/mqtt/acl 端点(任何情况返 200, secret 错/异常均 ignore, fail-open 语义可接受因 authn 已 fail-closed); emqx-setup.mts 新增 ensureAcl(HTTP authorizer + 链顺序 [http,file] PUT) + rollbackAcl(--rollback-acl 分支)
+- EMQX 5.8 authorization API 坑: 路径是 /api/v5/authorization/sources; PUT http source body 必须含 type 字段(与 connector/action PUT 不含 name/type 恰相反); authorization cache 默认 ttl 1m, 负向验证前须 DELETE /api/v5/authorization/cache
+- P2 TLS: ensureCerts(openssl 自签 ca.pem 10年+server.pem SAN localhost/127.0.0.1 825天, 落 backend/.certs/ 存在即跳过) + ensureTlsListener(ssl:default 8883 换绝对路径自签证书, verify_none 单向); config 默认 MQTT_BROKER_PORT=8883/SSL=true; sim-device.js 默认 mqtts + CA 校验(rejectUnauthorized true), MQTT_URL=mqtt://1883 明文回退保留
+- E2E 全 PASS: ①republish 真实化——建规则后订阅者实收信封消息(9 字段完整, topic 占位符正确替换), forward_logs result=success latency 2-3ms, 测后规则已删; ②ACL 负向 4 项——越权 sub #(SUBACK Not authorized)/pub 他人设备 topic(PUBACK 0x87)/pub $SYS(0x87)全拒, 正向对照 sub 自己下行 topic 放行, authorization.deny 计数 0→8; ③1883 明文回退——独立 clientId 连明文口可连可发(authn/ACL 照常生效), 属性流正常; ④mqtts 下行回归——PUT desired(desiredVersion 正确传递)→模拟器实时收到 $shadow/get/accepted, 测后 desired 清空归零
+- 质量门: backend tsc 0 error / 302 passed(基线 280 + check-topic-acl 17 + republish 真实化净增 5) / lint 0 error 129 warning(全为基线风格); root tsc 0 error / lint 0 error 0 warning
+- 前端配套: message-queue-page republish 目标 topic 校验拒绝通配符; schema.prisma targetConfig 注释补占位符说明; .gitignore 加 *.key(*.pem 原有); 证书与 .env 不入库
+
+Stage Summary:
+- EMQX 接入从「连得上」升级为「管得住+加密传」: 设备级 ACL 上行 4 topic/下行 3 前缀精确授权, 非设备客户端经 file 兜底放行(dashboard 等), 8883 mqtts 默认通道+1883 明文开发回退
+- rule-engine republish 从模拟改为 EMQX 管理 API 真实发布, 信封格式与 http 转发对齐, E2E 实收验证
+- 配置全脚本化幂等(ensureAcl/ensureCerts/ensureTlsListener), rollback-acl 一键回退 ACL; 计划内未做(后续按需): mTLS/EMQX 集群监控/action 下行调用链路

@@ -34,8 +34,25 @@ export interface TargetResult {
 }
 
 export type FetchImpl = (url: string, init: RequestInit) => Promise<Response>;
+/** MQTT 重发布实现(EmqxBridgeService.publish 注入) */
+export type PublishImpl = (topic: string, payload: object) => Promise<boolean>;
 
 const HTTP_TIMEOUT_MS = 5_000;
+
+/** 转发信封: http 与 republish 共享的 JSON 形状 */
+export function buildForwardEnvelope(rule: RuleRecord, msg: UpstreamMessage) {
+  return {
+    rule_id: rule.id,
+    rule_name: rule.name,
+    device_id: msg.deviceId,
+    device_name: msg.deviceName,
+    product_id: msg.productId,
+    message_type: msg.messageType,
+    topic: buildTopic(msg),
+    payload: msg.payload,
+    forwarded_at: new Date().toISOString(),
+  };
+}
 
 /** 组装真实的 MQTT topic 展示 */
 export function buildTopic(msg: UpstreamMessage): string {
@@ -75,11 +92,12 @@ export function matchRules(rules: RuleRecord[], msg: UpstreamMessage): RuleRecor
   });
 }
 
-/** 执行转发目标(http: POST JSON; republish: 无 EMQX 环境模拟成功) */
+/** 执行转发目标(http: POST JSON; republish: 经 EMQX 管理 API 重发布到目标 topic) */
 export async function executeTarget(
   rule: RuleRecord,
   msg: UpstreamMessage,
   fetchImpl: FetchImpl = fetch,
+  publishImpl?: PublishImpl,
 ): Promise<TargetResult> {
   const started = Date.now();
   const config = (rule.targetConfig ?? {}) as { url?: unknown; topic?: unknown };
@@ -96,17 +114,7 @@ export async function executeTarget(
         const res = await fetchImpl(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            rule_id: rule.id,
-            rule_name: rule.name,
-            device_id: msg.deviceId,
-            device_name: msg.deviceName,
-            product_id: msg.productId,
-            message_type: msg.messageType,
-            topic: buildTopic(msg),
-            payload: msg.payload,
-            forwarded_at: new Date().toISOString(),
-          }),
+          body: JSON.stringify(buildForwardEnvelope(rule, msg)),
           signal: controller.signal,
         });
         if (!res.ok) {
@@ -131,8 +139,29 @@ export async function executeTarget(
   }
 
   if (rule.targetType === 'republish') {
-    // 无 EMQX 环境: 模拟消息重发布成功
-    return { result: 'success', errorMsg: null, latencyMs: Date.now() - started };
+    // 经 EMQX 管理 API 重发布(管理通道不受 ACL 约束); topic 支持 {productId}/{deviceName} 占位符
+    const rawTopic = typeof config.topic === 'string' ? config.topic : '';
+    const topic = rawTopic
+      .replaceAll('{productId}', msg.productId)
+      .replaceAll('{deviceName}', msg.deviceName);
+    if (!topic || !publishImpl) {
+      return {
+        result: 'failed',
+        errorMsg: !topic ? '规则未配置目标 Topic' : 'EMQX bridge 未配置, 无法重发布',
+        latencyMs: 0,
+      };
+    }
+    if (topic.includes('+') || topic.includes('#')) {
+      return { result: 'failed', errorMsg: '目标 Topic 不能包含 MQTT 通配符 + 或 #', latencyMs: 0 };
+    }
+    const ok = await publishImpl(topic, buildForwardEnvelope(rule, msg));
+    return ok
+      ? { result: 'success', errorMsg: null, latencyMs: Date.now() - started }
+      : {
+          result: 'failed',
+          errorMsg: 'EMQX 重发布失败(bridge 未启用或推送出错)',
+          latencyMs: Date.now() - started,
+        };
   }
 
   return { result: 'failed', errorMsg: `未知转发类型: ${rule.targetType}`, latencyMs: 0 };
@@ -142,6 +171,7 @@ export class RuleEngineService {
   constructor(
     private readonly db: PrismaClient,
     private readonly fetchImpl: FetchImpl = fetch,
+    private readonly publishImpl?: PublishImpl,
   ) {}
 
   /**
@@ -160,7 +190,12 @@ export class RuleEngineService {
       const logs: Prisma.ForwardLogCreateManyInput[] = [];
 
       for (const rule of matched) {
-        const outcome = await executeTarget(rule as unknown as RuleRecord, msg, this.fetchImpl);
+        const outcome = await executeTarget(
+          rule as unknown as RuleRecord,
+          msg,
+          this.fetchImpl,
+          this.publishImpl,
+        );
         logs.push({
           ruleId: rule.id,
           ruleName: rule.name,
