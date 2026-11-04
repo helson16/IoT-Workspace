@@ -234,6 +234,27 @@ export interface ThingModelSnapshot {
   actions: ThingModelAction[];
 }
 
+// ---------------- 设备分组 ----------------
+
+export interface DeviceGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+  deviceCount: number;
+}
+
+export interface GroupMemberDevice {
+  deviceId: string;
+  deviceName: string;
+  productId: string;
+  productName: string;
+  status: string;
+  lastLoginAt: string | null;
+}
+
 // ---------------- API 方法 ----------------
 
 export const api = {
@@ -277,6 +298,31 @@ export const api = {
     apiFetch<ThingModelSnapshot>(`/api/v1/products/${productId}/thing-model`, {
       method: "PUT",
       body: JSON.stringify(body),
+    }),
+
+  // 设备分组
+  getDeviceGroups: () => apiFetch<DeviceGroup[]>("/api/v1/device-groups"),
+  createDeviceGroup: (body: { name: string; description?: string; color?: string }) =>
+    apiFetch<DeviceGroup>("/api/v1/device-groups", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateDeviceGroup: (
+    groupId: string,
+    body: { name?: string; description?: string; color?: string },
+  ) =>
+    apiFetch<DeviceGroup>(`/api/v1/device-groups/${groupId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteDeviceGroup: (groupId: string) =>
+    apiFetch<null>(`/api/v1/device-groups/${groupId}`, { method: "DELETE" }),
+  getGroupDevices: (groupId: string) =>
+    apiFetch<GroupMemberDevice[]>(`/api/v1/device-groups/${groupId}/devices`),
+  setGroupDevices: (groupId: string, deviceIds: string[]) =>
+    apiFetch<null>(`/api/v1/device-groups/${groupId}/devices`, {
+      method: "PUT",
+      body: JSON.stringify({ device_ids: deviceIds }),
     }),
 
   // 设备(全局)

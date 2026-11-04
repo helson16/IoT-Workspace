@@ -78,6 +78,18 @@ export class DeviceNameConflictError extends IotError {
   }
 }
 
+export class GroupNotFoundError extends IotError {
+  constructor(message: string, details?: ErrorDetail[]) {
+    super(message, 40403, 404, details);
+  }
+}
+
+export class GroupNameConflictError extends IotError {
+  constructor(message: string, details?: ErrorDetail[]) {
+    super(message, 40903, 409, details);
+  }
+}
+
 export class ThingModelInvalidError extends IotError {
   constructor(message: string, details?: ErrorDetail[]) {
     super(message, 42201, 422, details);

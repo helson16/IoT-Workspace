@@ -15,6 +15,7 @@ import authRoutes from './routes/auth.routes.js';
 import shadowRoutes from './routes/shadow.routes.js';
 import internalRoutes from './routes/internal.routes.js';
 import statsRoutes from './routes/stats.routes.js';
+import deviceGroupRoutes from './routes/device-group.routes.js';
 
 const fastify = Fastify({
   logger: {
@@ -144,5 +145,6 @@ await fastify.register(authRoutes);
 await fastify.register(shadowRoutes);
 await fastify.register(internalRoutes);
 await fastify.register(statsRoutes);
+await fastify.register(deviceGroupRoutes);
 
 export default fastify;
