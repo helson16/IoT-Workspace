@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, type DeviceItem } from "@/lib/api/client";
 import { useAppStore } from "@/stores/app-store";
 import {
-  Search, RefreshCw, Plus, MoreHorizontal, ChevronRight, Check, X,
+  Search, RefreshCw, Plus, MoreHorizontal, ChevronRight, ChevronLeft, Check, X,
 } from "lucide-react";
 
 const statusConfig: Record<string, { dot: string; label: string; textColor: string; bg: string }> = {
@@ -29,6 +29,7 @@ export function DeviceListPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DeviceStatus>("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [deviceName, setDeviceName] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
@@ -39,10 +40,10 @@ export function DeviceListPage() {
   const { setSelectedDeviceId } = useAppStore();
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ["devices", { status: statusFilter === "all" ? undefined : statusFilter, keyword: search || undefined }],
+    queryKey: ["devices", { status: statusFilter === "all" ? undefined : statusFilter, keyword: search || undefined, page }],
     queryFn: () =>
       api.getDevices({
-        page: 1,
+        page,
         page_size: 50,
         status: statusFilter === "all" ? undefined : statusFilter,
         keyword: search || undefined,
@@ -134,7 +135,7 @@ export function DeviceListPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#BBBFC4]" />
               <input
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 placeholder="搜索设备名称"
                 className="pl-9 pr-3 h-[32px] w-[240px] text-[13px] border border-[#E5E6EB] rounded bg-[#F7F8FA] placeholder:text-[#BBBFC4] focus:outline-none focus:border-[#0052D9]"
               />
@@ -146,7 +147,7 @@ export function DeviceListPage() {
                 return (
                   <button
                     key={s}
-                    onClick={() => setStatusFilter(s)}
+                    onClick={() => { setStatusFilter(s); setPage(1); }}
                     className={
                       "px-3 h-[32px] rounded text-[13px] border transition-colors " +
                       (isActive
@@ -268,9 +269,24 @@ export function DeviceListPage() {
 
         {/* Pagination */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-[#E5E6EB]">
-          <span className="text-[12px] text-[#999]">共 {totalCount} 条记录</span>
-          <div className="flex items-center gap-1">
-            <button className="w-8 h-8 flex items-center justify-center rounded text-[13px] bg-[#0052D9] text-white">1</button>
+          <span className="text-[12px] text-[#999]">
+            共 {totalCount} 条记录{data ? `, 第 ${page}/${Math.max(1, Math.ceil(totalCount / data.page_size))} 页` : ""}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setPage((p) => Math.max(1, p - 1)); setChecked(new Set()); }}
+              disabled={page <= 1 || isLoading}
+              className="px-3 h-7 flex items-center gap-1 rounded border border-[#E5E6EB] text-[12px] text-[#666] hover:border-[#0052D9] hover:text-[#0052D9] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[#E5E6EB] disabled:hover:text-[#666] transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> 上一页
+            </button>
+            <button
+              onClick={() => { setPage((p) => p + 1); setChecked(new Set()); }}
+              disabled={!data || page >= Math.ceil(totalCount / data.page_size) || isLoading}
+              className="px-3 h-7 flex items-center gap-1 rounded border border-[#E5E6EB] text-[12px] text-[#666] hover:border-[#0052D9] hover:text-[#0052D9] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[#E5E6EB] disabled:hover:text-[#666] transition-colors"
+            >
+              下一页 <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>

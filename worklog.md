@@ -646,3 +646,22 @@ Stage Summary:
 - buildHourlyTrend 纯函数模式(UTC 整小时对齐 + 补零)可复用于后续小时级趋势需求
 - Mac 睡眠导致的模拟器数据空窗属环境特性, 记录不修
 - worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交
+
+Task ID: 19
+Agent: Main Agent
+Task: 控制台体验优化 — 概览快捷入口/设备列表分页/大数字千分位(用户选定方向)
+
+Work Log:
+- 横向审计 12 页面(grep 扫描空态文案/加载错误态/分页控件/时间格式), 确认 3 项真实缺陷(快捷入口错配+死按钮、设备列表无分页、大数字无千分位), 排除虚构打磨项
+- 设计 .ai-docs/designs/ux-polish-design.md: 3 项修复方案 + 验证计划
+- 概览页: 快捷入口数据驱动化(quickEntries 数组含 target 字段), onClick 统一 setCurrentPage(entry.target) 替代 label 字符串匹配; 修复 2 处错配(物模型定义→product-define、消息通信→message-queue)与死按钮; 入口集合定为 新建产品/注册设备/物模型定义/数据监控/消息通信/API Explorer
+- 设备管理页: 新增 page state, queryKey 纳入 page 传后端, 搜索/状态筛选变更时重置回第 1 页; 页脚分页控件(上一页/当前页码/下一页)替换原固定「1」按钮, 翻页清空勾选集, isLoading/边界禁用
+- 音视频服务页: 5 处大数字 toLocaleString() 千分位(今日录制/截图/回放统计卡、累计事件、饼图头部「共 N 次」、页脚「共 N 条事件」), 对齐 data-analysis 页既有惯例
+- 质量门: root tsc+lint 0; backend 无改动(基线 264/264 确认)
+- E2E 8 项检查全 PASS: 概览页 6 入口名称正确(无「固件升级」「设备日志」)且 4 个入口跳转正确(物模型定义→产品定义/API Explorer→开发中心/数据监控→监控运维/消息通信→消息通信)、设备管理页「共 14 条记录, 第 1/1 页」+首页禁用态、音视频页累计事件 68,354 带千分位、趋势堆叠面积图/类型分布饼图渲染正常、console 0 新错误
+- E2E 跨天插曲: 三服务夜间被清理已全部重启; 模拟器 02:32 起 Mac 睡眠停摆(已知环境特性)重启后恢复 24 条/min
+
+Stage Summary:
+- 概览页快捷入口全部可用且指向正确, 设备列表分页达可用标准, 大数字千分位对齐全站
+- quickEntries 数据驱动模式: 后续入口增删只改数组不动 JSX
+- 遗留未提交文件 STATUS.md / case-table.mts(typesafe 线程)保持原样未纳入本次提交

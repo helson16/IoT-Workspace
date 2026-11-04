@@ -223,15 +223,15 @@ export function LogServicePage() {
         </div>
       ) : stats ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <StatCard label="今日录制" value={String(stats.today_recording)} sub="次" icon={Video} />
-          <StatCard label="今日截图" value={String(stats.today_snapshot)} sub="次" icon={Camera} />
-          <StatCard label="今日回放" value={String(stats.today_playback)} sub="次" icon={Play} />
-          <StatCard label="云存空间" value={fmtSize(stats.storage_bytes)} sub={`累计 ${stats.total_events} 条事件`} icon={HardDrive} />
+          <StatCard label="今日录制" value={stats.today_recording.toLocaleString()} sub="次" icon={Video} />
+          <StatCard label="今日截图" value={stats.today_snapshot.toLocaleString()} sub="次" icon={Camera} />
+          <StatCard label="今日回放" value={stats.today_playback.toLocaleString()} sub="次" icon={Play} />
+          <StatCard label="云存空间" value={fmtSize(stats.storage_bytes)} sub={`累计 ${stats.total_events.toLocaleString()} 条事件`} icon={HardDrive} />
           <StatCard label="今日回放时长" value={fmtDuration(stats.today_duration_sec)} sub={`活跃设备 ${stats.device_count} 台`} icon={Clock} />
           <StatCard
             label="事件成功率"
             value={stats.success_rate === null ? "—" : `${(stats.success_rate * 100).toFixed(1)}%`}
-            sub={`今日 ${stats.today_events} 条`}
+            sub={`今日 ${stats.today_events.toLocaleString()} 条`}
             icon={CheckCircle}
           />
         </div>
@@ -262,7 +262,7 @@ export function LogServicePage() {
         <div className="bg-white rounded border border-[#E5E6EB] p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[13px] font-medium text-[#333]">今日类型分布</span>
-            <span className="text-[11px] text-[#999]">共 {stats?.today_events ?? 0} 次</span>
+            <span className="text-[11px] text-[#999]">共 {(stats?.today_events ?? 0).toLocaleString()} 次</span>
           </div>
           <div className="h-[220px]">
             {statsLoading ? (
@@ -381,7 +381,7 @@ export function LogServicePage() {
         )}
         <div className="flex items-center justify-between px-4 py-3 border-t border-[#E5E6EB]">
           <span className="text-[12px] text-[#888]">
-            共 {events?.total ?? 0} 条事件{events ? `, 第 ${events.page}/${totalPages} 页` : ""}
+            共 {(events?.total ?? 0).toLocaleString()} 条事件{events ? `, 第 ${events.page}/${totalPages} 页` : ""}
           </span>
           <div className="flex items-center gap-2">
             <Button

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type ActivityItem, type OverviewStats } from "@/lib/api/client";
 import { useAppStore } from "@/stores/app-store";
 import {
-  FolderOpen, Cpu, Monitor, Wifi, RefreshCw,
+  FolderOpen, Cpu, Monitor, Wifi, RefreshCw, FileCode2, MessageSquare,
 } from "lucide-react";
 
 const activityStatusColor: Record<string, string> = {
@@ -51,13 +51,13 @@ function ActivityRow({ item }: { item: ActivityItem }) {
 }
 
 const quickEntries = [
-  { label: "新建产品", Icon: Cpu, color: "text-[#0052D9]", bg: "bg-[#E6F0FF]" },
-  { label: "注册设备", Icon: Monitor, color: "text-[#2BA471]", bg: "bg-[#E8F8F0]" },
-  { label: "固件升级", Icon: FolderOpen, color: "text-[#ED7B2F]", bg: "bg-[#FFF3E8]" },
-  { label: "数据监控", Icon: Wifi, color: "text-[#7B61FF]", bg: "bg-[#F0EDFF]" },
-  { label: "设备日志", Icon: FolderOpen, color: "text-[#00A870]", bg: "bg-[#E8F8F0]" },
-  { label: "API Explorer", Icon: Cpu, color: "text-[#E34D59]", bg: "bg-[#FDECEE]" },
-];
+  { label: "新建产品", Icon: Cpu, color: "text-[#0052D9]", bg: "bg-[#E6F0FF]", target: "product-list" },
+  { label: "注册设备", Icon: Monitor, color: "text-[#2BA471]", bg: "bg-[#E8F8F0]", target: "device-list" },
+  { label: "物模型定义", Icon: FileCode2, color: "text-[#ED7B2F]", bg: "bg-[#FFF3E8]", target: "product-define" },
+  { label: "数据监控", Icon: Wifi, color: "text-[#7B61FF]", bg: "bg-[#F0EDFF]", target: "ops-monitor" },
+  { label: "消息通信", Icon: MessageSquare, color: "text-[#00A870]", bg: "bg-[#E8F8F0]", target: "message-queue" },
+  { label: "API Explorer", Icon: Cpu, color: "text-[#E34D59]", bg: "bg-[#FDECEE]", target: "cloud-dev" },
+] as const;
 
 export function OverviewPage() {
   const { setCurrentPage } = useAppStore();
@@ -135,11 +135,7 @@ export function OverviewPage() {
             {quickEntries.map((entry) => (
               <button
                 key={entry.label}
-                onClick={() => {
-                  if (entry.label === "新建产品" || entry.label === "API Explorer") setCurrentPage("product-list");
-                  else if (entry.label === "注册设备" || entry.label === "数据监控") setCurrentPage("device-list");
-                  else if (entry.label === "设备日志") setCurrentPage("log-service");
-                }}
+                onClick={() => setCurrentPage(entry.target)}
                 className="flex flex-col items-center gap-2.5 p-3 rounded hover:bg-[#F9FAFB] hover:shadow-sm transition-all duration-200 group"
               >
                 <div className={"w-10 h-10 rounded-lg flex items-center justify-center " + entry.bg + " group-hover:scale-110 transition-transform"}>
