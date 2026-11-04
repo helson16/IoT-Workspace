@@ -175,3 +175,21 @@ Stage Summary:
 - PUT 物模型端点首次端到端打通（version 递增链路验证）
 - lint 0 / root tsc 0 / backend tsc 0 / 54 单测通过
 - 教训： 端点写完 ≠ 打通，schema 校验的入参风格必须与自家 API 返回风格对齐（或加适配层）
+
+---
+Task ID: 10
+Agent: Main Agent
+Task: 设备分组（全栈三层断链打通）
+
+Work Log:
+- 现状： device-groups-page 已有 UI 骨架但请求不存在的 /api/groups（无鉴权/路径错误），后端零端点，DB 无表 — 三层断链
+- DB： Prisma +DeviceGroup（cuid id, name unique, description, color）+ Device.groupId FK（onDelete: SetNull, 含索引），prisma db push
+- 后端： device-group.routes.ts + device-group.service.ts，6 端点（列表含 deviceCount / 创建 / 更新 / 删除 / 组内设备 / 全量替换成员）；成员替换为事务：先清空本组再设置目标列表，设备从原组移入为新组是 updateMany 自然结果；device_ids 含不存在设备时整体拒绝；错误类 +GroupNotFoundError(40403)/GroupNameConflictError(40903)；app.ts 注册
+- 前端： client.ts +6 API 方法与类型；device-groups-page 重写（卡片网格/空态/骨架/错误重试、新建编辑对话框 8 色色板、删除确认提示解绑数、成员管理对话框：搜索过滤+候选列表+单台添加/移除）
+- **修复循环 1 轮**： 候选列表「可添加设备 0 台」— 前端 page_size=200 超后端上限 100 → 40001 → useQuery 静默失败 → 候选空。改为 100
+- API 冒烟： CRUD+成员替换+重名 40903+SetNull 解绑全通过；浏览器 E2E： 新建→加 2 台→移除 1 台（卡片 1 台同步）→改名 V2→删除（提示「组内 1 台设备将自动解绑」）→空态恢复，设备 12 台完整
+
+Stage Summary:
+- 质量门： lint 0 / root tsc 0 / backend tsc 0 / 54 单测通过 / console 0 产品错误
+- 分组功能全链路闭环，测试数据已清理（0 组/12 设备）
+- 范围外 follow-up： 设备列表页加分组列/筛选、分组批量指令下发

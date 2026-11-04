@@ -42,6 +42,7 @@ model Device {
   deviceName      String   @db.VarChar(128)
   deviceSecret    String   @db.VarChar(128)
   productId       String   @db.VarChar(64)
+  groupId         String?  @map("group_id")
   status          String   @default("not-activated") @db.VarChar(16)
   lastLoginAt     DateTime? @map("last_login_at")
   lastLogoutAt    DateTime? @map("last_logout_at")
@@ -53,6 +54,7 @@ model Device {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   product         Product  @relation(fields: [productId], references: [productId], onDelete: Cascade)
+  group           DeviceGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   shadow          DeviceShadow?
   propertyHistory DevicePropertyHistory[]
   eventLogs       DeviceEventLog[]
@@ -62,7 +64,24 @@ model Device {
   @@index([productId], map: "idx_devices_product_id")
   @@index([status], map: "idx_devices_status")
   @@index([lastLoginAt(sort: Desc)], map: "idx_devices_last_login")
+  @@index([groupId], map: "idx_devices_group_id")
   @@map("devices")
+}
+
+// ============================================================
+// 2.5 设备分组表 (Device Groups)
+// ============================================================
+model DeviceGroup {
+  id          String   @id @default(cuid())
+  name        String   @unique @db.VarChar(64)
+  description String?
+  color       String   @default("#0052D9") @db.VarChar(16)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  devices     Device[]
+
+  @@map("device_groups")
 }
 
 // ============================================================
