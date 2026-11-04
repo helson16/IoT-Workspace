@@ -603,3 +603,24 @@ Follow-up(标签映射修复, 用户批准):
 - sidebar 错标修正: 设备接入组「固件升级」→「设备详情」(device-detail 页面实际为设备详情页)
 - 顺带清理 sidebar.tsx 7 个未使用 lucide 导入(Package/Workflow/Cloud/BarChart3/ScrollText/HardDrive/Server), IDE 面板归零
 - 验证: root tsc+lint 0; E2E 7/7 PASS(开发中心/消息通信/云存服务/监控运维面包屑一致, 设备接入子项无固件升级错标, 设备详情/安全认证正常, console 0 新错误)
+
+---
+Task ID: 17
+Agent: Main Agent
+Task: 修复 2 个记录在案的 known issue(用户批准方向)
+
+Work Log:
+- 设计文档 .ai-docs/designs/known-issue-fixes-design.md; DB 实验证实 8h 偏移: timestamp 列存 UTC wall time 而 PG session 时区 Asia/Shanghai, `now() - interval '24 hours'` 取本地 wall 比较, 实测 buggy 窗口 14478 条 vs 正确 27522 条(漏 13044 条 ≈ 8 小时) → 监控运维页 24h 趋势图左侧 8 桶恒空
+- 修复①: ops.routes.ts L47 改 `WHERE timestamp >= (now() AT TIME ZONE 'utc') - interval '24 hours'`; 全后端 grep 确认仅此 1 处遗漏(analytics Task 13 已修); Node 侧 todayStart+Prisma where 模式无偏移(Prisma 发 UTC ISO 与列语义一致, 经 av stats 验证)
+- 修复②: internal 回调禁用设备拦截 — 纯函数 shouldBlockCallback(设备不存在不拦[webhook 乱序容忍]/disabled 拦[与 EMQX auth 403 语义一致]); assertDeviceActive 守卫接入 property-report/event-report/av-report/action-reply/shadow-update/online 六回调; offline 改 updateMany + status != 'disabled' 条件防止离线通知覆盖禁用标记(Redis 清除照做); av-report 复用既有 findUnique 加 select status, 无额外查询
+- 单测: 新增 internal-callback-guard.test.ts 4 用例(不存在/disabled/正常三态/防御异常值)
+- 质量门: root tsc+lint 0; backend typecheck 0; npm test 259/259(新增 4)
+- curl 拦截链路 5/5: 禁用 hallway-thermo-04 后 online/property-report/event-report/av-report 全部 403 40301, DB 状态仍 disabled; offline 回调 200 且 DB 状态不被覆盖; 测试后设备已恢复 offline
+- 偏移修复核验: /api/v1/ops/metrics 24 个小时桶全部非零(修复前左侧 8 桶恒空), 24h 总消息 ~27000 与 psql 直查一致
+- E2E 5/5 PASS(浏览器): 监控运维页统计卡真实数字(今日消息 12354, 在线率 57% 8/14)/24h 趋势图横轴满覆盖且左端有数据无空白/概览页无回归/console 0 新错误(仅已归档噪音)
+
+Stage Summary:
+- 两个 known issue 清零: known issue 列表仅剩「ops 8h 偏移」「internal 不拦 disabled」两项, 均已修复并回归
+- 安全语义闭环: EMQX auth hook 拒绝 disabled(403) 与 internal 回调拦截(403) 现已一致, 禁用设备无法通过任何链路上线或写数据
+- offline 回执 body 的 status:'offline' 为受理语义, 非 DB 状态(已核验 disabled 未被覆盖), 不改
+- worklog 前一 typesafe 条目遗留的 STATUS.md/case-table.mts 未提交改动保持原样未纳入本次提交

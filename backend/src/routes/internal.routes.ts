@@ -6,7 +6,29 @@ import { recordAuthLog } from '../services/security.service.js';
 import { AvService } from '../services/av.service.js';
 import { thingModelValidator } from '../shared/validator.js';
 import { success } from '../shared/response.js';
-import { UnauthorizedError, PropertyValueInvalidError, DeviceNotFoundError } from '../shared/errors.js';
+import { UnauthorizedError, PropertyValueInvalidError, DeviceNotFoundError, ForbiddenError } from '../shared/errors.js';
+
+/**
+ * internal 回调是否应拦截该设备(纯函数, 可单测)。
+ * - 设备不存在: 不拦(EMQX webhook 乱序容忍, 与既有行为一致, 由后续逻辑处理)
+ * - 设备 disabled: 拦(与 EMQX auth hook 拒绝 disabled 设备的语义一致, 403)
+ */
+export function shouldBlockCallback(deviceExists: boolean, status: string | undefined): boolean {
+  return deviceExists && status === 'disabled';
+}
+
+type DbLike = { device: { findUnique: (args: any) => Promise<{ status: string } | null> } };
+
+/** 回调前置守卫: 设备存在且被禁用则 403 */
+async function assertDeviceActive(db: DbLike, deviceId: string): Promise<void> {
+  const device = await db.device.findUnique({
+    where: { deviceId },
+    select: { status: true },
+  });
+  if (shouldBlockCallback(device !== null, device?.status)) {
+    throw new ForbiddenError(`设备 ${deviceId} 已被禁用, 拒绝处理其回调`);
+  }
+}
 
 export default async function internalRoutes(fastify: FastifyInstance) {
   // Internal auth middleware
@@ -51,6 +73,9 @@ export default async function internalRoutes(fastify: FastifyInstance) {
 
     const { device_id, product_id, payload } = request.body as any;
     const params = payload.params;
+
+    // 禁用设备拒绝上报(与 EMQX auth hook 语义一致)
+    await assertDeviceActive(fastify.db, device_id);
 
     // 1. Load thing model properties for validation
     const properties = await fastify.db.thingModelProperty.findMany({
@@ -149,6 +174,9 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     const { device_id, payload } = request.body as any;
     const { event_id, event_type, output_params } = payload.params;
 
+    // 禁用设备拒绝上报(与 EMQX auth hook 语义一致)
+    await assertDeviceActive(fastify.db, device_id);
+
     await fastify.db.deviceEventLog.create({
       data: {
         deviceId: device_id,
@@ -219,13 +247,16 @@ export default async function internalRoutes(fastify: FastifyInstance) {
 
     const { device_id, events } = request.body as any;
 
-    // 校验设备存在(取 deviceName 供文件名兜底), 不存在则 404
+    // 校验设备存在(取 deviceName 供文件名兜底), 不存在则 404; 禁用设备 403
     const device = await fastify.db.device.findUnique({
       where: { deviceId: device_id },
-      select: { deviceName: true },
+      select: { deviceName: true, status: true },
     });
     if (!device) {
       throw new DeviceNotFoundError(`设备 ${device_id} 不存在`);
+    }
+    if (shouldBlockCallback(true, device.status)) {
+      throw new ForbiddenError(`设备 ${device_id} 已被禁用, 拒绝处理其回调`);
     }
 
     const avService = new AvService(fastify.db);
@@ -265,6 +296,9 @@ export default async function internalRoutes(fastify: FastifyInstance) {
 
     const { device_id, payload } = request.body as any;
     const { code: respCode, data, msg } = payload;
+
+    // 禁用设备拒绝处理(与 EMQX auth hook 语义一致)
+    await assertDeviceActive(fastify.db, device_id);
 
     const status = respCode === 0 ? 'success' : 'failed';
 
@@ -315,6 +349,9 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     const { device_id, payload } = request.body as any;
     const reported = payload.payload?.state?.reported;
 
+    // 禁用设备拒绝影子更新(与 EMQX auth hook 语义一致)
+    await assertDeviceActive(fastify.db, device_id);
+
     if (reported && typeof reported === 'object' && Object.keys(reported).length > 0) {
       const shadowService = new ShadowService(fastify.db, fastify);
       await shadowService.updateReported(device_id, reported);
@@ -341,6 +378,9 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     await internalAuth(request);
 
     const { device_id } = request.body as any;
+
+    // 禁用设备拒绝上线(与 EMQX auth hook 拒绝 disabled 一致)
+    await assertDeviceActive(fastify.db, device_id);
 
     await fastify.db.device.update({
       where: { deviceId: device_id },
@@ -371,10 +411,11 @@ export default async function internalRoutes(fastify: FastifyInstance) {
 
     const { device_id } = request.body as any;
 
-    await fastify.db.device.update({
-      where: { deviceId: device_id },
+    // 离线通知: 仅对非 disabled 设备落状态, 防止覆盖禁用标记; Redis 在线清除照做
+    await fastify.db.device.updateMany({
+      where: { deviceId: device_id, status: { not: 'disabled' } },
       data: { status: 'offline', lastLogoutAt: new Date() },
-    }).catch(() => {});
+    });
 
     await fastify.delDeviceOnline(device_id);
 
