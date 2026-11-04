@@ -313,6 +313,25 @@ export interface RejectedItem {
   reason: string;
 }
 
+/**
+ * 第一问四个判断的原始置信度。
+ *
+ * 存在的理由: 顶层 `confidence` 是**重载**的 —— 护栏命中时它装的是"触发该护栏那个问题的
+ * 置信度", 正常路径上装的是属性置信度。实测读表时这就是坑: 表格里一个数字,
+ * 分不清是"模型不确定选哪个属性"还是"用户要求改两个属性"。
+ * 这里把四个值原样摊开, 让"谁是谁"不再靠 hint 反推。
+ */
+export interface ParseJudgments {
+  /** 是否是一条可执行的下发指令 */
+  intent_actionable: number;
+  /** 是否含定时/条件 */
+  mentions_timing: number;
+  /** 是否要求同时修改两个或以上属性 */
+  mentions_multiple: number;
+  /** 选中的属性置信度; 无答案时为 0 */
+  target_property_confidence: number;
+}
+
 export interface ParseMeta {
   /** 每次请求返回的 model 字段 (实际版本号), 按调用顺序 */
   models: Array<string | null>;
@@ -322,6 +341,8 @@ export interface ParseMeta {
   candidate_count: number;
   /** 抽取到的取值候选 */
   value_spans: string[];
+  /** 第一问的四个原始判定值。未调用模型就短路时不存在 (如"无可写属性") */
+  judgments?: ParseJudgments;
 }
 
 export interface ParseCommandResult {
@@ -495,6 +516,12 @@ export class CommandParseService {
 
     meta.models.push(first.model ?? null);
     meta.timings_ms.push(d1);
+    meta.judgments = {
+      intent_actionable: intent,
+      mentions_timing: timing,
+      mentions_multiple: multiple,
+      target_property_confidence: propConfidence,
+    };
     this.logStep('request1', {
       model: first.model,
       elapsed_ms: d1,
