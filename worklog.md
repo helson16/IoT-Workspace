@@ -152,3 +152,8 @@ Stage Summary:
 - ESLint 0 问题；root/backend/tests 三个 tsc 项目 + 两个遗留目录 tsc 全部零错误；50/50 单测通过
 - 浏览器冒烟：导航切换正常（产品页/设备页 12 行），render 期 state 调整无死循环，console 仅剩 dev HMR 噪音
 - 教训：tsconfig exclude 会连带 IDE 孤儿文件误报 — 每个含 TS 的目录都应有归属 tsconfig 或 shim
+
+Follow-up（同日，console 2 错误追查）:
+- 实验定性 net::ERR_ABORTED /?_rsc=<id> 与 / 两条错误：Next.js dev 模式 HMR 产物（连续快速保存 → 前一次 Fast Refresh 的 RSC fetch 被中断），非产品缺陷
+- 证据链：新标签纯净加载+静置 15s = 0 错误；真实节奏 4 页导航 = 0 错误；连续两次文件编辑 → 错误必现；还原后无新增。生产构建（next build）无 HMR，不存在此问题
+- 流程改进（用户要求）：此后每步改动后立即检查 console + IDE 诊断，错误当场定性（缺陷/dev 噪音/工具注入），不积压到任务末尾
