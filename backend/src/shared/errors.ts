@@ -102,6 +102,12 @@ export class RuleNameConflictError extends IotError {
   }
 }
 
+export class ChartNotFoundError extends IotError {
+  constructor(message: string, details?: ErrorDetail[]) {
+    super(message, 40404, 404, details);
+  }
+}
+
 export class ThingModelInvalidError extends IotError {
   constructor(message: string, details?: ErrorDetail[]) {
     super(message, 42201, 422, details);

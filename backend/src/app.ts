@@ -18,6 +18,7 @@ import statsRoutes from './routes/stats.routes.js';
 import deviceGroupRoutes from './routes/device-group.routes.js';
 import opsRoutes from './routes/ops.routes.js';
 import ruleRoutes from './routes/rule.routes.js';
+import analyticsRoutes from './routes/analytics.routes.js';
 
 const fastify = Fastify({
   logger: {
@@ -154,5 +155,6 @@ await fastify.register(statsRoutes);
 await fastify.register(deviceGroupRoutes);
 await fastify.register(opsRoutes);
 await fastify.register(ruleRoutes);
+await fastify.register(analyticsRoutes);
 
 export default fastify;
