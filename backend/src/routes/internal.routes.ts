@@ -288,4 +288,116 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     const resp = success({ status: 'offline', device_id });
     reply.code(resp.statusCode).send(resp.body);
   });
+
+  // ============================================================
+  // POST /api/internal/mqtt/auth - EMQX HTTP Authentication Hook
+  // ============================================================
+  // EMQX 在设备 CONNECT 时调用此接口。
+  // 请求体由 EMQX 发送: { clientid, username, password }
+  //
+  // username 格式: {productId}{deviceName};{sdkAppId}
+  //   例: "prod-a1b2c3d4dev-mock-01;12010126"
+  // password 格式: {deviceSecret};hmacsha256
+  //   例: "a3f8e2c1...;hmacsha256"
+  //
+  // 返回: HTTP 200 = 允许连接, HTTP 4xx/5xx = 拒绝连接
+  // ============================================================
+  fastify.post('/api/internal/mqtt/auth', async (request, reply) => {
+    const { username, password, clientid } = request.body as any;
+
+    fastify.log.debug({ clientid, username }, 'EMQX auth request');
+
+    // 1. 校验 X-Internal-Secret（EMQX 配置中注入的 Header）
+    const secret = request.headers['x-internal-secret'];
+    if (!secret || !config.internalSecret) {
+      reply.code(401).send();
+      return;
+    }
+    const { timingSafeEqual } = await import('../shared/crypto.js');
+    if (!timingSafeEqual(String(secret), config.internalSecret)) {
+      reply.code(401).send();
+      return;
+    }
+
+    // 2. 从 username 解析 productId + deviceName
+    //    格式: {productId}{deviceName};{sdkAppId}
+    //    productId 固定格式 prod-xxxxxxxx（11字符）
+    const semicolonIdx = username.indexOf(';');
+    if (semicolonIdx === -1) {
+      fastify.log.warn({ username }, 'Invalid username format: missing semicolon');
+      reply.code(401).send();
+      return;
+    }
+    const prefixPart = username.substring(0, semicolonIdx);
+
+    // productId 总是 "prod-" + 8 hex = 11 字符
+    const PRODUCT_ID_LEN = 11;
+    if (prefixPart.length <= PRODUCT_ID_LEN) {
+      fastify.log.warn({ username }, 'Invalid username format: too short');
+      reply.code(401).send();
+      return;
+    }
+
+    const productId = prefixPart.substring(0, PRODUCT_ID_LEN);
+    const deviceName = prefixPart.substring(PRODUCT_ID_LEN);
+
+    // 3. 从 password 提取 deviceSecret（去掉 ";hmacsha256" 后缀）
+    const secretSuffix = ';hmacsha256';
+    if (!password || !password.endsWith(secretSuffix)) {
+      fastify.log.warn({ clientid }, 'Invalid password format: missing hmacsha256 suffix');
+      reply.code(401).send();
+      return;
+    }
+    const deviceSecret = password.substring(0, password.length - secretSuffix.length);
+
+    // 4. 查找设备并校验密钥
+    try {
+      const device = await fastify.db.device.findUnique({
+        where: {
+          uq_device_product_name: { productId, deviceName },
+        },
+        select: {
+          deviceId: true,
+          deviceSecret: true,
+          status: true,
+        },
+      });
+
+      if (!device) {
+        fastify.log.warn({ productId, deviceName, clientid }, 'EMQX auth: device not found');
+        reply.code(401).send();
+        return;
+      }
+
+      if (device.status === 'disabled') {
+        fastify.log.warn({ deviceId: device.deviceId }, 'EMQX auth: device is disabled');
+        reply.code(403).send();
+        return;
+      }
+
+      if (!timingSafeEqual(device.deviceSecret, deviceSecret)) {
+        fastify.log.warn({ deviceId: device.deviceId }, 'EMQX auth: secret mismatch');
+        reply.code(401).send();
+        return;
+      }
+
+      // 5. 认证成功 — 更新设备状态 + Redis 在线标记
+      await fastify.db.device.update({
+        where: { deviceId: device.deviceId },
+        data: { status: 'online', lastLoginAt: new Date() },
+      });
+      await fastify.setDeviceOnline(device.deviceId);
+
+      fastify.log.info(
+        { deviceId: device.deviceId, productId, deviceName, clientid },
+        'EMQX auth: device authenticated successfully',
+      );
+
+      // EMQX HTTP Auth: 200 = allow
+      reply.code(200).send({ result: 'allow' });
+    } catch (err) {
+      fastify.log.error({ err, username, clientid }, 'EMQX auth: internal error');
+      reply.code(500).send();
+    }
+  });
 }

@@ -1,0 +1,97 @@
+# ============================================================
+# IoT Explorer 本地基础设施
+# PostgreSQL 15 + Redis 7 + EMQX 5.x
+# ============================================================
+services:
+  # ---- PostgreSQL 15 ----
+  postgres:
+    image: postgres:15-alpine
+    container_name: iot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: iot_explorer
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d iot_explorer"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  # ---- Redis 7 ----
+  redis:
+    image: redis:7-alpine
+    container_name: iot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 3s
+
+  # ---- EMQX 5.x ----
+  emqx:
+    image: emqx/emqx:v5.8.3
+    container_name: iot-emqx
+    restart: unless-stopped
+    ports:
+      - "1883:1883"       # MQTT TCP
+      - "8883:8883"       # MQTT SSL (TLS)
+      - "8083:8083"       # MQTT WebSocket
+      - "18083:18083"     # Dashboard
+    environment:
+      # EMQX 认证 — HTTP Backend 指向后端 Fastify
+      EMQX_AUTHENTICATION__1__MECHANISM: "password_based"
+      EMQX_AUTHENTICATION__1__BACKEND: "http"
+      EMQX_AUTHENTICATION__1__ENABLE: "true"
+      EMQX_AUTHENTICATION__1__HTTP__URL: "http://host.docker.internal:3200/api/internal/mqtt/auth"
+      EMQX_AUTHENTICATION__1__HTTP__METHOD: "post"
+      EMQX_AUTHENTICATION__1__HTTP__HEADERS: >-
+        {"Content-Type":"application/json","X-Internal-Secret":"dev-internal-secret"}
+      EMQX_AUTHENTICATION__1__HTTP__BODY: >-
+        {"clientid":"${clientid}","username":"${username}","password":"${password}"}
+      EMQX_AUTHENTICATION__1__HTTP__POOL_SIZE: 32
+      EMQX_AUTHENTICATION__1__HTTP__POOL_TIMEOUT: "5s"
+      # Dashboard 默认密码
+      EMQX_DASHBOARD__DEFAULT_USERNAME: "admin"
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: "public123"
+      # 日志级别
+      EMQX_LOG__CONSOLE__LEVEL: "warning"
+      EMQX_LOG__FILE__DEFAULTS__LEVEL: "info"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - emqxdata:/opt/emqx/data
+      - emqxlog:/opt/emqx/log
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "emqx", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+  emqxdata:
+    driver: local
+  emqxlog:
+    driver: local
