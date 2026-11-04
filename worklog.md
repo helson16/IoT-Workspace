@@ -726,3 +726,25 @@ Stage Summary:
 - TypeSafe 端到端闭环: 自然语言→解析→确认→下发, 前端接入完成(智能解析 UI 就绪, 待上游恢复即可用)
 - 修复既有影子乐观锁契约断裂(desiredVersion 字段缺失), E2E 全链路验证通过
 - 交叉发现: TypeSafe 451 区域限制(影响 TA 用例表实跑, 待 TA 线程确认)
+
+---
+Task ID: 23
+Agent: Main Agent
+Task: EMQX 真实 MQTT 接入落地 — broker 鉴权/数据集成/影子下行推送/模拟器双模式
+
+Work Log:
+- 计划: .trae/documents/emqx-mqtt-integration.md (用户批准)
+- P0: brew install emqx 5.8.8_1 (Apache-2.0 最后版本, 5.9+ 转 BUSL; brew 已宣布 2026-11-30 后 disable 该 formula, 已装副本可继续用); brew services start; MQTT 1883/管理 API 18083 正常
+- P1: backend/tools/emqx-setup.mts 全 REST API 幂等配置脚本 —— 先 POST /api/v5/login 换 Bearer token(EMQX 5.8 不接受 admin/public 直接 Basic 调 API); 配 1 authn(HTTP 密码认证→后端 /api/internal/mqtt/auth) + 1 connector(http:iot_backend) + 6 action + 6 rule(上行 $thing/up/property|event、$shadow/update、$av/up/event 与系统事件 $events/client_connected|disconnected, 5.8 用旧版主题) + API key(iotBackend, 落 backend/.env)
+- EMQX 5.8 两个 API 坑: ① PUT connectors/actions 的 body 不接受 name/type(已在路径中, 否则 400 unknown_fields), POST 发全量 PUT 发增量; ② authn 非 200 一律视为 ignore→链耗尽默认拒绝, 现有 401/403 端点行为无需改动
+- P2 后端: config 增 emqxApiBase/Key/Secret + broker 默认 1883/无 SSL; internal.routes 抽出纯函数 parseMqttUsername(productId 前 13 字符切分)复用至 auth handler, 新增 resolveTarget 双源定位(device_id 旧形状兼容/username 解析查库, online/offline tolerant 乱序容忍), 7 端点 schema 增可选 username; device.service buildMqttConfig 从旧 $iot 体系统一为 DESIGN.md §3.2 的 $thing/$shadow 体系; 新建 emqx-bridge.service(管理 API publish, 未配 key 时 no-op) + shadow.service updateDesired/clearDesired 落库后 fire-and-forget 推 $shadow/get/accepted/{p}/{n}(含 desiredVersion/delta, 失败仅 warn 不影响主链路)
+- P3: tests/sim-device.js 改双模式(SIM_MODE=mqtt 默认真实链路/http 回退): 一机一密连 EMQX(auth hook 鉴权即上线), 订阅 $thing/down/property|action + $shadow/get/accepted 三个下行 topic, 上行 $thing/up/property|event + $av/up/event(发布裸数组配合 action 模板 "events":${payload}); 根 package.json 增 mqtt@5.10.4 devDependency
+- P4 E2E 全 PASS: 3 设备 CONNECT 鉴权成功(device_auth_logs mqtt-connect success×3, status=online); 数据持续入库(5min 属性 126 条+AV 83 条, 15h 高温告警 1639 条); 负向①错 secret 被拒+日志「Secret mismatch」; 负向②禁用设备被拒+日志「Device is disabled」(测后恢复 online); 断开→disconnected webhook→3 设备 offline; 下行闭环: PUT desired(fan_mode/target_temp)→模拟器实时收到 $shadow/get/accepted 含 desired+delta, DELETE 清空同样推送空通知, 测后夹具恢复干净(desiredVersion 归 0)
+- 质量门: backend tsc 0 error / 280 passed(基线 273 + 新增 parseMqttUsername 7 条) / lint 0 error 127 warning(顺手清 1 个死 import InternalError, 新文件 0 warning); root tsc 0 error / lint 0 error 0 warning(emqx-bridge 两处三元表达式语句改 if/else)
+- 测试插曲: shadow 单测 3 失败系 mock fixture 缺 device 关联(updateDesired 新增 include device), fixture 补 {productId, deviceName} 即全过
+
+Stage Summary:
+- 平台从「HTTP internal 回调模拟 MQTT」升级为真实 EMQX broker 接入: 一机一密鉴权/上下线系统事件/数据集成上行入库/影子下行推送全链路真跑验证通过
+- EMQX 配置全脚本化且幂等(可重跑/换环境可复现); API key/secret 仅存 backend/.env 未入库
+- 模拟器保留 MQTT/HTTP 双模式, http 为无 EMQX 环境的回退通道
+- 计划内未做(后续按需): TLS/ACL/EMQX 集群监控/rule-engine republish 真实化/action 下行调用链路

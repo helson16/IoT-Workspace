@@ -2,9 +2,9 @@ import type { PrismaClient } from '@prisma/client';
 import {
   DeviceNotFoundError,
   ShadowVersionConflictError,
-  InternalError,
 } from '../shared/errors.js';
 import type { ShadowDocument } from '../types/index.js';
+import { EmqxBridgeService } from './emqx-bridge.service.js';
 
 interface RedisHelper {
   getShadowCache: (deviceId: string) => Promise<string | null>;
@@ -18,6 +18,9 @@ interface ShadowMetadata {
 }
 
 export class ShadowService {
+  // EMQX 下行推送桥(fire-and-forget, 未配置 API key 时为 no-op)
+  private readonly emqxBridge = new EmqxBridgeService();
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly redisHelper: RedisHelper,
@@ -108,6 +111,7 @@ export class ShadowService {
   ): Promise<ShadowDocument> {
     const shadow = await this.prisma.deviceShadow.findUnique({
       where: { deviceId },
+      include: { device: { select: { productId: true, deviceName: true } } },
     });
     if (!shadow) {
       throw new DeviceNotFoundError(
@@ -192,6 +196,19 @@ export class ShadowService {
     } catch {
       // Ignore cache errors
     }
+
+    // 下行通知: 推送 desired 变化到设备订阅的 $shadow/get/accepted/{p}/{n}
+    // (fire-and-forget, 未配置 EMQX API key 或推送失败均不影响主链路)
+    void this.emqxBridge.publishShadowAccepted(
+      shadow.device.productId,
+      shadow.device.deviceName,
+      {
+        version,
+        desiredVersion: newDesiredVersion,
+        desired: mergedDesired,
+        delta,
+      },
+    );
 
     return doc;
   }
@@ -293,6 +310,7 @@ export class ShadowService {
   async clearDesired(deviceId: string): Promise<void> {
     const shadow = await this.prisma.deviceShadow.findUnique({
       where: { deviceId },
+      include: { device: { select: { productId: true, deviceName: true } } },
     });
     if (!shadow) {
       throw new DeviceNotFoundError(
@@ -325,6 +343,18 @@ export class ShadowService {
     } catch {
       // Ignore cache errors
     }
+
+    // 下行通知: desired 已清空, 推送空 delta 通知设备(fire-and-forget)
+    void this.emqxBridge.publishShadowAccepted(
+      shadow.device.productId,
+      shadow.device.deviceName,
+      {
+        version: shadow.reportedVersion,
+        desiredVersion: 0,
+        desired: {},
+        delta: {},
+      },
+    );
   }
 
   async getDelta(deviceId: string): Promise<Record<string, any>> {

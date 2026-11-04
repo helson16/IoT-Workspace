@@ -6,7 +6,7 @@ import { recordAuthLog } from '../services/security.service.js';
 import { AvService } from '../services/av.service.js';
 import { thingModelValidator } from '../shared/validator.js';
 import { success } from '../shared/response.js';
-import { UnauthorizedError, PropertyValueInvalidError, DeviceNotFoundError, ForbiddenError } from '../shared/errors.js';
+import { UnauthorizedError, PropertyValueInvalidError, DeviceNotFoundError, ForbiddenError, ValidationError } from '../shared/errors.js';
 
 /**
  * internal 回调是否应拦截该设备(纯函数, 可单测)。
@@ -15,6 +15,25 @@ import { UnauthorizedError, PropertyValueInvalidError, DeviceNotFoundError, Forb
  */
 export function shouldBlockCallback(deviceExists: boolean, status: string | undefined): boolean {
   return deviceExists && status === 'disabled';
+}
+
+/** MQTT username 前缀长度: productId 固定 13 字符("prod-" 5 + 8 hex), 与 generateProductId() 一致 */
+const MQTT_PRODUCT_ID_LEN = 13;
+
+/**
+ * 解析 MQTT username: `{productId}{deviceName};{sdkAppId}`(auth hook 与本文件共用)。
+ * 返回 null = 格式非法(缺分号 / 前缀不含 deviceName)。
+ */
+export function parseMqttUsername(username: unknown): { productId: string; deviceName: string } | null {
+  if (typeof username !== 'string') return null;
+  const semicolonIdx = username.indexOf(';');
+  if (semicolonIdx === -1) return null;
+  const prefixPart = username.substring(0, semicolonIdx);
+  if (prefixPart.length <= MQTT_PRODUCT_ID_LEN) return null;
+  return {
+    productId: prefixPart.substring(0, MQTT_PRODUCT_ID_LEN),
+    deviceName: prefixPart.substring(MQTT_PRODUCT_ID_LEN),
+  };
 }
 
 type DbLike = { device: { findUnique: (args: any) => Promise<{ status: string } | null> } };
@@ -45,14 +64,52 @@ export default async function internalRoutes(fastify: FastifyInstance) {
 
   const ruleEngine = new RuleEngineService(fastify.db);
 
+  /**
+   * 定位回调目标设备(两种来源二选一, device_id 优先保持旧模拟器形状兼容):
+   * - device_id: 直用(旧模拟器 / 内部调用形状)
+   * - username: EMQX webhook 形状, parseMqttUsername 解析 productId+deviceName 后查库
+   *
+   * strict=false(tolerant, 供 online/offline): 定位失败返回 null, 调用方受理但不处理
+   *   (与 online/offline 原有"设备不存在不拦"的乱序容忍语义一致)
+   * strict=true: 缺两个定位字段 → 400; username 合法但设备不存在 → 404
+   */
+  type InternalTarget = { deviceId: string };
+  const resolveTarget = async (
+    body: { device_id?: string; username?: string },
+    opts: { tolerant?: boolean } = {},
+  ): Promise<InternalTarget | null> => {
+    if (body.device_id) return { deviceId: body.device_id };
+
+    const parsed = parseMqttUsername(body.username);
+    if (parsed) {
+      const device = await fastify.db.device.findUnique({
+        where: { uq_device_product_name: parsed },
+        select: { deviceId: true },
+      });
+      if (device) return { deviceId: device.deviceId };
+    }
+
+    if (opts.tolerant) return null;
+    if (!parsed) {
+      throw new ValidationError(
+        '回调缺少 device_id 或合法 username, 无法定位设备',
+        [{ field: 'username', message: 'Provide device_id or username in format {productId}{deviceName};{sdkAppId}' }],
+      );
+    }
+    throw new DeviceNotFoundError(
+      `设备 ${parsed.productId}/${parsed.deviceName} 不存在`,
+    );
+  };
+
   // POST /api/internal/mqtt/property-report - 设备属性上报回调
   fastify.post('/api/internal/mqtt/property-report', {
     schema: {
       body: {
         type: 'object',
-        required: ['device_id', 'product_id', 'device_name', 'payload'],
+        required: ['payload'],
         properties: {
           device_id: { type: 'string' },
+          username: { type: 'string' },
           product_id: { type: 'string' },
           device_name: { type: 'string' },
           payload: {
@@ -71,15 +128,28 @@ export default async function internalRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     await internalAuth(request);
 
-    const { device_id, product_id, payload } = request.body as any;
+    const { payload } = request.body as any;
     const params = payload.params;
 
+    // 定位设备(EMQX webhook username / 旧模拟器 device_id 二选一)
+    const target = await resolveTarget(request.body as any);
+    if (!target) throw new ValidationError('无法定位设备', []);
+
     // 禁用设备拒绝上报(与 EMQX auth hook 语义一致)
-    await assertDeviceActive(fastify.db, device_id);
+    await assertDeviceActive(fastify.db, target.deviceId);
+
+    // 设备元信息(物模型查询 / 规则引擎分发用, 统一以库为准)
+    const device = await fastify.db.device.findUnique({
+      where: { deviceId: target.deviceId },
+      select: { deviceName: true, productId: true },
+    });
+    if (!device) {
+      throw new DeviceNotFoundError(`设备 ${target.deviceId} 不存在`);
+    }
 
     // 1. Load thing model properties for validation
     const properties = await fastify.db.thingModelProperty.findMany({
-      where: { productId: product_id },
+      where: { productId: device.productId },
       orderBy: { sortOrder: 'asc' },
     });
 
@@ -101,12 +171,12 @@ export default async function internalRoutes(fastify: FastifyInstance) {
 
     // 3. Update device shadow reported state
     const shadowService = new ShadowService(fastify.db, fastify);
-    await shadowService.updateReported(device_id, params);
+    await shadowService.updateReported(target.deviceId, params);
 
     // 4. Write to property history
     const now = new Date();
     const historyRecords = Object.entries(params).map(([key, value]) => ({
-      deviceId: device_id,
+      deviceId: target.deviceId,
       identifier: key,
       value: value as any,
       timestamp: now,
@@ -117,22 +187,16 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     }
 
     // 5. Refresh device online status in Redis
-    await fastify.setDeviceOnline(device_id);
+    await fastify.setDeviceOnline(target.deviceId);
 
     // 6. 规则引擎分发(失败不影响上报主链路)
-    const device = await fastify.db.device.findUnique({
-      where: { deviceId: device_id },
-      select: { deviceName: true, productId: true },
+    void ruleEngine.dispatch({
+      productId: device.productId,
+      deviceId: target.deviceId,
+      deviceName: device.deviceName,
+      messageType: 'property',
+      payload: params,
     });
-    if (device) {
-      void ruleEngine.dispatch({
-        productId: device.productId,
-        deviceId: device_id,
-        deviceName: device.deviceName,
-        messageType: 'property',
-        payload: params,
-      });
-    }
 
     const resp = success({ received: true, properties_count: Object.keys(params).length });
     reply.code(resp.statusCode).send(resp.body);
@@ -143,9 +207,10 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     schema: {
       body: {
         type: 'object',
-        required: ['device_id', 'payload'],
+        required: ['payload'],
         properties: {
           device_id: { type: 'string' },
+          username: { type: 'string' },
           payload: {
             type: 'object',
             required: ['method', 'params'],
@@ -171,32 +236,36 @@ export default async function internalRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     await internalAuth(request);
 
-    const { device_id, payload } = request.body as any;
+    const { payload } = request.body as any;
     const { event_id, event_type, output_params } = payload.params;
 
+    // 定位设备(EMQX webhook username / 旧模拟器 device_id 二选一)
+    const target = await resolveTarget(request.body as any);
+    if (!target) throw new ValidationError('无法定位设备', []);
+
     // 禁用设备拒绝上报(与 EMQX auth hook 语义一致)
-    await assertDeviceActive(fastify.db, device_id);
+    await assertDeviceActive(fastify.db, target.deviceId);
 
     await fastify.db.deviceEventLog.create({
       data: {
-        deviceId: device_id,
+        deviceId: target.deviceId,
         eventId: event_id,
         eventType: event_type,
         payload: output_params,
       },
     });
 
-    await fastify.setDeviceOnline(device_id);
+    await fastify.setDeviceOnline(target.deviceId);
 
     // 规则引擎分发(失败不影响上报主链路)
     const device = await fastify.db.device.findUnique({
-      where: { deviceId: device_id },
+      where: { deviceId: target.deviceId },
       select: { deviceName: true, productId: true },
     });
     if (device) {
       void ruleEngine.dispatch({
         productId: device.productId,
-        deviceId: device_id,
+        deviceId: target.deviceId,
         deviceName: device.deviceName,
         messageType: 'event',
         payload: {
@@ -218,9 +287,10 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     schema: {
       body: {
         type: 'object',
-        required: ['device_id', 'events'],
+        required: ['events'],
         properties: {
           device_id: { type: 'string' },
+          username: { type: 'string' },
           events: {
             type: 'array',
             minItems: 1,
@@ -245,24 +315,28 @@ export default async function internalRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     await internalAuth(request);
 
-    const { device_id, events } = request.body as any;
+    const { events } = request.body as any;
+
+    // 定位设备(EMQX webhook username / 旧模拟器 device_id 二选一)
+    const target = await resolveTarget(request.body as any);
+    if (!target) throw new ValidationError('无法定位设备', []);
 
     // 校验设备存在(取 deviceName 供文件名兜底), 不存在则 404; 禁用设备 403
     const device = await fastify.db.device.findUnique({
-      where: { deviceId: device_id },
+      where: { deviceId: target.deviceId },
       select: { deviceName: true, status: true },
     });
     if (!device) {
-      throw new DeviceNotFoundError(`设备 ${device_id} 不存在`);
+      throw new DeviceNotFoundError(`设备 ${target.deviceId} 不存在`);
     }
     if (shouldBlockCallback(true, device.status)) {
-      throw new ForbiddenError(`设备 ${device_id} 已被禁用, 拒绝处理其回调`);
+      throw new ForbiddenError(`设备 ${target.deviceId} 已被禁用, 拒绝处理其回调`);
     }
 
     const avService = new AvService(fastify.db);
-    const { received } = await avService.recordEvents(device_id, device.deviceName, events);
+    const { received } = await avService.recordEvents(target.deviceId, device.deviceName, events);
 
-    await fastify.setDeviceOnline(device_id);
+    await fastify.setDeviceOnline(target.deviceId);
 
     const resp = success({ received: true, count: received });
     reply.code(resp.statusCode).send(resp.body);
@@ -273,9 +347,10 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     schema: {
       body: {
         type: 'object',
-        required: ['device_id', 'payload'],
+        required: ['payload'],
         properties: {
           device_id: { type: 'string' },
+          username: { type: 'string' },
           payload: {
             type: 'object',
             required: ['method', 'clientToken'],
@@ -294,16 +369,20 @@ export default async function internalRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     await internalAuth(request);
 
-    const { device_id, payload } = request.body as any;
+    const { payload } = request.body as any;
     const { code: respCode, data, msg } = payload;
 
+    // 定位设备(EMQX webhook username / 旧模拟器 device_id 二选一)
+    const target = await resolveTarget(request.body as any);
+    if (!target) throw new ValidationError('无法定位设备', []);
+
     // 禁用设备拒绝处理(与 EMQX auth hook 语义一致)
-    await assertDeviceActive(fastify.db, device_id);
+    await assertDeviceActive(fastify.db, target.deviceId);
 
     const status = respCode === 0 ? 'success' : 'failed';
 
     await fastify.db.deviceActionLog.updateMany({
-      where: { deviceId: device_id, callId: payload.clientToken, status: 'pending' },
+      where: { deviceId: target.deviceId, callId: payload.clientToken, status: 'pending' },
       data: {
         status,
         outputParams: data?.output_params ?? {},
@@ -322,9 +401,10 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     schema: {
       body: {
         type: 'object',
-        required: ['device_id', 'payload'],
+        required: ['payload'],
         properties: {
           device_id: { type: 'string' },
+          username: { type: 'string' },
           payload: {
             type: 'object',
             required: ['method'],
@@ -346,15 +426,19 @@ export default async function internalRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     await internalAuth(request);
 
-    const { device_id, payload } = request.body as any;
+    const { payload } = request.body as any;
     const reported = payload.payload?.state?.reported;
 
+    // 定位设备(EMQX webhook username / 旧模拟器 device_id 二选一)
+    const target = await resolveTarget(request.body as any);
+    if (!target) throw new ValidationError('无法定位设备', []);
+
     // 禁用设备拒绝影子更新(与 EMQX auth hook 语义一致)
-    await assertDeviceActive(fastify.db, device_id);
+    await assertDeviceActive(fastify.db, target.deviceId);
 
     if (reported && typeof reported === 'object' && Object.keys(reported).length > 0) {
       const shadowService = new ShadowService(fastify.db, fastify);
-      await shadowService.updateReported(device_id, reported);
+      await shadowService.updateReported(target.deviceId, reported);
     }
 
     const resp = success({ received: true });
@@ -362,13 +446,14 @@ export default async function internalRoutes(fastify: FastifyInstance) {
   });
 
   // POST /api/internal/mqtt/online - 设备上线通知
+  // (EMQX $events/client_connected 系统事件 / 旧模拟器直连均可调用)
   fastify.post('/api/internal/mqtt/online', {
     schema: {
       body: {
         type: 'object',
-        required: ['device_id'],
         properties: {
           device_id: { type: 'string' },
+          username: { type: 'string' },
           client_id: { type: 'string' },
           ip_address: { type: 'string' },
         },
@@ -377,30 +462,37 @@ export default async function internalRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     await internalAuth(request);
 
-    const { device_id } = request.body as any;
+    // 定位设备, tolerant: 定位失败(设备不存在/格式非法)受理不处理(乱序容忍)
+    const target = await resolveTarget(request.body as any, { tolerant: true });
+    if (!target) {
+      const resp = success({ status: 'online', received: true, note: 'device unresolvable, ignored' });
+      reply.code(resp.statusCode).send(resp.body);
+      return;
+    }
 
     // 禁用设备拒绝上线(与 EMQX auth hook 拒绝 disabled 一致)
-    await assertDeviceActive(fastify.db, device_id);
+    await assertDeviceActive(fastify.db, target.deviceId);
 
     await fastify.db.device.update({
-      where: { deviceId: device_id },
+      where: { deviceId: target.deviceId },
       data: { status: 'online', lastLoginAt: new Date() },
     }).catch(() => { /* device may not exist in DB yet */ });
 
-    await fastify.setDeviceOnline(device_id);
+    await fastify.setDeviceOnline(target.deviceId);
 
-    const resp = success({ status: 'online', device_id });
+    const resp = success({ status: 'online', device_id: target.deviceId });
     reply.code(resp.statusCode).send(resp.body);
   });
 
   // POST /api/internal/mqtt/offline - 设备离线通知
+  // (EMQX $events/client_disconnected 系统事件 / 旧模拟器直连均可调用)
   fastify.post('/api/internal/mqtt/offline', {
     schema: {
       body: {
         type: 'object',
-        required: ['device_id'],
         properties: {
           device_id: { type: 'string' },
+          username: { type: 'string' },
           client_id: { type: 'string' },
           reason: { type: 'string' },
         },
@@ -409,17 +501,23 @@ export default async function internalRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     await internalAuth(request);
 
-    const { device_id } = request.body as any;
+    // 定位设备, tolerant: 定位失败(设备不存在/格式非法)受理不处理(乱序容忍)
+    const target = await resolveTarget(request.body as any, { tolerant: true });
+    if (!target) {
+      const resp = success({ status: 'offline', received: true, note: 'device unresolvable, ignored' });
+      reply.code(resp.statusCode).send(resp.body);
+      return;
+    }
 
     // 离线通知: 仅对非 disabled 设备落状态, 防止覆盖禁用标记; Redis 在线清除照做
     await fastify.db.device.updateMany({
-      where: { deviceId: device_id, status: { not: 'disabled' } },
+      where: { deviceId: target.deviceId, status: { not: 'disabled' } },
       data: { status: 'offline', lastLogoutAt: new Date() },
     });
 
-    await fastify.delDeviceOnline(device_id);
+    await fastify.delDeviceOnline(target.deviceId);
 
-    const resp = success({ status: 'offline', device_id });
+    const resp = success({ status: 'offline', device_id: target.deviceId });
     reply.code(resp.statusCode).send(resp.body);
   });
 
@@ -472,23 +570,13 @@ export default async function internalRoutes(fastify: FastifyInstance) {
     //    格式: {productId}{deviceName};{sdkAppId}
     //    productId 固定格式 prod-xxxxxxxx("prod-" 5 字符 + 8 hex = 13 字符,
     //    与 generateProductId() 一致; 此前误写 11 会导致解析错位认证必败)
-    const semicolonIdx = username.indexOf(';');
-    if (semicolonIdx === -1) {
-      fastify.log.warn({ username }, 'Invalid username format: missing semicolon');
+    const parsedIdentity = parseMqttUsername(username);
+    if (!parsedIdentity) {
+      fastify.log.warn({ username }, 'Invalid username format: missing semicolon or too short');
       reply.code(401).send();
       return;
     }
-    const prefixPart = username.substring(0, semicolonIdx);
-
-    const PRODUCT_ID_LEN = 13;
-    if (prefixPart.length <= PRODUCT_ID_LEN) {
-      fastify.log.warn({ username }, 'Invalid username format: too short');
-      reply.code(401).send();
-      return;
-    }
-
-    const productId = prefixPart.substring(0, PRODUCT_ID_LEN);
-    const deviceName = prefixPart.substring(PRODUCT_ID_LEN);
+    const { productId, deviceName } = parsedIdentity;
 
     // 3. 从 password 提取 deviceSecret（去掉 ";hmacsha256" 后缀）
     const secretSuffix = ';hmacsha256';

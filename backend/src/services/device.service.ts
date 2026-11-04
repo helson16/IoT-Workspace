@@ -62,12 +62,14 @@ export function buildMqttConfig(
     ),
     username: buildMqttUsername(productId, deviceName, config.mqttSdkAppId),
     password: buildMqttPassword(deviceSecret),
+    // Topic 规范见 backend-design/DESIGN.md §3.2($thing 体系):
+    // 下行订阅: 属性设置 / 行为调用 / 影子 desired 通知; 上行发布以 property 为默认示例
     subscribeTopics: [
-      `$iot/${productId}/${deviceName}/property/down`,
-      `$iot/${productId}/${deviceName}/action/down`,
-      `$iot/${productId}/${deviceName}/shadow/accepted`,
+      `$thing/down/property/${productId}/${deviceName}`,
+      `$thing/down/action/${productId}/${deviceName}`,
+      `$shadow/get/accepted/${productId}/${deviceName}`,
     ],
-    publishTopic: `$iot/${productId}/${deviceName}/property/up`,
+    publishTopic: `$thing/up/property/${productId}/${deviceName}`,
   };
 }
 
