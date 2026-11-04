@@ -21,7 +21,7 @@ import {
   type TypeSafeClientConfig,
 } from '@typesafe-ai/sdk';
 import type { PrismaClient } from '@prisma/client';
-import { DeviceNotFoundError, ValidationError } from '../shared/errors.js';
+import { DeviceNotFoundError, IotError, UpstreamServiceError } from '../shared/errors.js';
 import { ProductService } from './product.service.js';
 import type { ThingModelProperty } from '../types/index.js';
 
@@ -301,11 +301,14 @@ export type ParseClient = Pick<TypeSafeClient, 'systemOne'>;
 export interface ParseLogger {
   info(obj: Record<string, unknown>, msg?: string): void;
   warn(obj: Record<string, unknown>, msg?: string): void;
+  /** 必填而非可选: 漏接线时应当在编译期报错, 而不是运行时静默丢掉日志 */
+  error(obj: Record<string, unknown>, msg?: string): void;
 }
 
 const consoleLogger: ParseLogger = {
   info: (obj, msg) => console.log(`[command-parse] ${msg ?? ''}`, JSON.stringify(obj)),
   warn: (obj, msg) => console.warn(`[command-parse] ${msg ?? ''}`, JSON.stringify(obj)),
+  error: (obj, msg) => console.error(`[command-parse] ${msg ?? ''}`, JSON.stringify(obj)),
 };
 
 export interface RejectedItem {
@@ -385,20 +388,55 @@ export class CommandParseService {
   /**
    * 懒创建 client。`new TypeSafeClient()` 在缺少 TYPESAFE_API_KEY 时会抛错,
    * 因此不能放在构造函数 —— 否则整个后端无法启动。
+   *
+   * 缺 key 归入"上游不可用"而不是 400: 这不是调用方的输入有问题, 是他的请求**当前无法被服务**。
+   * 先记日志再抛 —— app.ts 的 IotError 分支不打日志, 不在这里写就没人知道是配置问题。
    */
   private getClient(): ParseClient {
     if (this.client) return this.client;
     const apiKey = process.env['TYPESAFE_API_KEY'];
     if (!apiKey || apiKey.trim() === '') {
-      throw new ValidationError(
-        '未配置 TYPESAFE_API_KEY, 自然语言解析不可用',
+      this.logger.error(
+        { step: 'typesafe', missing: 'TYPESAFE_API_KEY' },
+        '解析服务未配置',
       );
+      throw new UpstreamServiceError('解析服务未配置, 请联系管理员');
     }
     const cfg: TypeSafeClientConfig = { apiKey };
     // 显式 model 覆盖: 用于固定到具体版本而非 jev-latest 别名
     if (this.modelOverride) cfg.defaultModel = this.modelOverride;
     this.client = new TypeSafeClient(cfg);
     return this.client;
+  }
+
+  /**
+   * 所有对 TypeSafe 的调用都必须经这里 (F-10)。直接让 SDK 的错误抛出去有两个后果, 第 4 轮实跑都撞到了:
+   *  ① 经 app.ts 的兜底分支变成一次对外 500 —— 前端分不清"上游挂了"和"用户输入有问题";
+   *  ② SDK 错误的 message 里装着上游**响应体**(实测是 Cloudflare 拦截页, 含我们的出口 IP),
+   *     而兜底分支会把 error.message 原样回显给调用方。
+   * 所以: 原始错误只进服务端日志(app.ts 的 IotError 分支不打日志, 这里是唯一的落点),
+   * 对外只给固定文案 + 稳定 code。
+   *
+   * 用 thunk 而非 (params, options) 形式: T 由调用点推断, 不必去抠 SDK systemOne 的泛型签名。
+   */
+  private async callUpstream<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (err) {
+      // 已是我们自己的受控错误(如上面"未配置"那条) —— 原样透出, 否则诊断信息被下面的兜底盖掉
+      if (err instanceof IotError) throw err;
+      this.logger.error(
+        {
+          step: 'typesafe',
+          // Error 的属性不可枚举: JSON.stringify({ err }) 会打成 {} —— 显式展开
+          errName: err instanceof Error ? err.name : typeof err,
+          errMessage: err instanceof Error ? err.message : String(err),
+          errStack: err instanceof Error ? err.stack : undefined,
+        },
+        'TypeSafe 调用失败, 已翻译为 502/50003',
+      );
+      throw new UpstreamServiceError('解析服务暂时不可用, 请稍后重试');
+    }
   }
 
   async parse(deviceId: string, text: string): Promise<ParseCommandResult> {
@@ -453,7 +491,7 @@ export class CommandParseService {
     propCriteria[NONE] = '以上都不是, 或无法从文本确定';
 
     const t1 = Date.now();
-    const first = await this.getClient().systemOne({
+    const first = await this.callUpstream(() => this.getClient().systemOne({
       state: {
         request: { text, device_name: device.deviceName },
         writable_properties: writable.map((p) => ({
@@ -501,7 +539,7 @@ export class CommandParseService {
         ),
       },
       ...(this.modelOverride ? { model: this.modelOverride } : {}),
-    }, { timeout: REQUEST_TIMEOUT_MS });
+    }, { timeout: REQUEST_TIMEOUT_MS }));
     const d1 = Date.now() - t1;
 
     // SDK 把 answers 声明成全量映射 `{[K in keyof Q]: ResultFor<Q[K]>}` —— 那是编译期的承诺,
@@ -698,11 +736,11 @@ export class CommandParseService {
     }
 
     const t2 = Date.now();
-    const second = await this.getClient().systemOne({
+    const second = await this.callUpstream(() => this.getClient().systemOne({
       state: { request: { text }, target_property: { identifier: prop.identifier, name: prop.name } },
       questions: { target_value: choice(instructions, criteria) },
       ...(this.modelOverride ? { model: this.modelOverride } : {}),
-    }, { timeout: REQUEST_TIMEOUT_MS });
+    }, { timeout: REQUEST_TIMEOUT_MS }));
     const d2 = Date.now() - t2;
 
     const picked = second.answers.target_value.choice as string;

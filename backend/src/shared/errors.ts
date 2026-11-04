@@ -137,3 +137,15 @@ export class MqttBrokerError extends IotError {
     super(message, 50002, 500, details);
   }
 }
+
+/**
+ * 上游语义服务 (TypeSafe) 不可用 —— 网络失败、超时、429/5xx, 以及"在边缘就被拒"。
+ * 单列一类的原因: 它**不是**用户输入有问题, 前端不能按"指令非法"提示。
+ * 更要紧的是 SDK 错误的 message 里装着上游**响应体**(实测含我们的出口 IP),
+ * 而 app.ts 的兜底处理会把 error.message 原样回显 —— 所以对外只给固定文案。
+ */
+export class UpstreamServiceError extends IotError {
+  constructor(message: string, details?: ErrorDetail[]) {
+    super(message, 50003, 502, details);
+  }
+}
