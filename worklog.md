@@ -41,3 +41,33 @@ Stage Summary:
 - 交付物全部保存至 backend-design/ 目录（4 个主文件 + 17 个 JSON 样例）
 - 涵盖数据库设计、物模型协议规范、API 架构、设备影子数据流转、安全认证五大模块
 - 技术选型：Fastify 5 + PostgreSQL 15 + EMQX 5 + Redis 7 + Prisma 6
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Fastify + TypeScript 后端服务骨架搭建与核心接口实现
+
+Work Log:
+- 初始化 backend/ 工程目录（package.json 18 依赖、tsconfig ESM+Node16、eslint.config.mjs、.prettierrc）
+- Prisma schema 转换：将 schema.sql 的 10 张 DDL 表精确映射为 Prisma schema（9 模型，含所有索引、唯一约束、级联删除）
+- config 层：16 个环境变量读取，JWT_SECRET 空值安全检查
+- plugins 层：prisma.ts（fp 插件 + $connect/$disconnect 生命周期）、redis.ts（ioredis + 6 个影子/在线状态 helper + module augmentation）
+- shared/errors.ts：13 个错误类（IotError 基类 + 40001~50002 全覆盖），toResponse() 统一格式
+- shared/crypto.ts：7 个函数（generateDeviceSecret/Id/ProductId、timingSafeEqual、buildMqttClientId/Username/Password）
+- shared/response.ts：4 个响应辅助（success/successCreated/paginated/error）+ 3 个接口定义
+- shared/validator.ts：ThingModelValidator 类（AJV 校验物模型定义 + 运行时属性值/行为参数校验，支持 10 种数据类型）
+- services/product.service.ts：7 个方法（create 含事务物模型拆分、list 分页、getById、update 含物模型替换、delete、getThingModelSnapshot、updateThingModel）
+- services/device.service.ts：7 个方法（register 含密钥生成+影子初始化+MQTT配置构建、batchRegister、list omit secret、getByName、deleteByName、updateStatus、authenticate 含 JWT 签发+Redis 在线标记）
+- services/shadow.service.ts：6 个方法（getShadow cache-aside、updateDesired 乐观锁+per-key metadata、updateReported 自动清除已满足 desired、clearDesired、getDelta、computeDelta 纯函数）
+- routes/product.routes.ts：7 个端点（POST/GET/GET:ID/PUT/DELETE 产品 + GET/PUT 物模型），全部 JSON Schema 校验
+- routes/device.routes.ts：6 个端点（register/batch-register/list/get/delete/status）
+- routes/auth.routes.ts：2 个端点（设备一机一密认证 + 平台 AppKey/AppSecret Token 签发）
+- routes/shadow.routes.ts：4 个端点（GET shadow/PUT desired/DELETE desired/GET delta）
+- routes/internal.routes.ts：6 个端点（MQTT 回调：property-report 含物模型校验+历史写入、event-report、action-reply、shadow-update、online、offline），X-Internal-Secret 鉴权
+- app.ts：插件注册链（cors→jwt→rateLimit→prisma→redis）+ 三级错误处理（IotError/Fastify validation/catch-all）+ /health
+- tsc --noEmit 零错误通过
+
+Stage Summary:
+- 18 个源文件、9 个 Prisma 模型、23 个 API 端点完整实现
+- TypeScript 严格模式零编译错误
+- 三层架构：routes(校验+编排) → services(业务逻辑) → plugins(基础设施)

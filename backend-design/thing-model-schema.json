@@ -1,6 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://iot-platform.local/schemas/thing-model/v1",\n  "title": "IoT Thing Model Definition",
+  "$id": "https://iot-platform.local/schemas/thing-model/v1",
+  "title": "IoT Thing Model Definition",
   "description": "物模型定义 JSON Schema，用于定义和校验产品下设备的属性、事件、行为。完全兼容腾讯云物模型协议格式。",
   "type": "object",
   "required": ["version", "properties"],

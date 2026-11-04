@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 1. 产品表 (Products)
+// ============================================================
+model Product {
+  productId         String  @id @db.VarChar(64) // prod-xxxxxxxx
+  productName       String  @unique @db.VarChar(128)
+  category          String  @default("Custom") @db.VarChar(64)
+  protocolType      String  @default("MQTT") @db.VarChar(32)
+  networkType       String  @default("WiFi") @db.VarChar(32)
+  dataProtocol      String  @default("MQTT-JSON") @db.VarChar(32)
+  authType          String  @default("one-machine-one-secret") @db.VarChar(32)
+  nodeType          String  @default("device") @db.VarChar(32)
+  description       String?
+  status            String  @default("active") @db.VarChar(16)
+  thingModelVersion Int     @default(1)
+  thingModel        Json    @default("{}") // 完整物模型JSON副本
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  devices           Device[]
+  thingModelProperties ThingModelProperty[]
+  thingModelEvents     ThingModelEvent[]
+  thingModelActions    ThingModelAction[]
+
+  @@map("products")
+}
+
+// ============================================================
+// 2. 设备表 (Devices)
+// ============================================================
+model Device {
+  deviceId        String   @id @db.VarChar(128)
+  deviceName      String   @db.VarChar(128)
+  deviceSecret    String   @db.VarChar(128)
+  productId       String   @db.VarChar(64)
+  status          String   @default("not-activated") @db.VarChar(16)
+  lastLoginAt     DateTime? @map("last_login_at")
+  lastLogoutAt    DateTime? @map("last_logout_at")
+  lastIp          String?  @map("last_ip") @db.VarChar(45)
+  firmwareVersion String   @default("1.0.0") @map("firmware_version") @db.VarChar(64)
+  tags            Json     @default("{}")
+  extraInfo       Json     @default("{}") @map("extra_info")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  product         Product  @relation(fields: [productId], references: [productId], onDelete: Cascade)
+  shadow          DeviceShadow?
+  propertyHistory DevicePropertyHistory[]
+  eventLogs       DeviceEventLog[]
+  actionLogs      DeviceActionLog[]
+
+  @@unique([productId, deviceName], name: "uq_device_product_name")
+  @@index([productId], map: "idx_devices_product_id")
+  @@index([status], map: "idx_devices_status")
+  @@index([lastLoginAt(sort: Desc)], map: "idx_devices_last_login")
+  @@map("devices")
+}
+
+// ============================================================
+// 3. 物模型 — 属性定义表
+// ============================================================
+model ThingModelProperty {
+  id          Int      @id @default(autoincrement())
+  productId   String   @db.VarChar(64)
+  identifier  String   @db.VarChar(64)
+  name        String   @db.VarChar(128)
+  dataType    String   @map("data_type") @db.VarChar(32)
+  accessMode  String   @default("rw") @map("access_mode") @db.VarChar(8)
+  description String?
+  spec        Json     @default("{}")
+  required    Boolean  @default(false)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  product     Product  @relation(fields: [productId], references: [productId], onDelete: Cascade)
+
+  @@unique([productId, identifier], name: "uq_property_product_id_identifier")
+  @@index([productId], map: "idx_tm_props_product")
+  @@map("thing_model_properties")
+}
+
+// ============================================================
+// 4. 物模型 — 事件定义表
+// ============================================================
+model ThingModelEvent {
+  id           Int      @id @default(autoincrement())
+  productId    String   @db.VarChar(64)
+  identifier   String   @db.VarChar(64)
+  name         String   @db.VarChar(128)
+  eventType    String   @default("info") @map("event_type") @db.VarChar(16)
+  description  String?
+  outputParams Json     @default("[]") @map("output_params")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  product      Product  @relation(fields: [productId], references: [productId], onDelete: Cascade)
+
+  @@unique([productId, identifier], name: "uq_event_product_id_identifier")
+  @@index([productId], map: "idx_tm_events_product")
+  @@map("thing_model_events")
+}
+
+// ============================================================
+// 5. 物模型 — 行为/服务定义表
+// ============================================================
+model ThingModelAction {
+  id           Int      @id @default(autoincrement())
+  productId    String   @db.VarChar(64)
+  identifier   String   @db.VarChar(64)
+  name         String   @db.VarChar(128)
+  description  String?
+  inputParams  Json     @default("[]") @map("input_params")
+  outputParams Json     @default("[]") @map("output_params")
+  asyncFlag    Boolean  @default(false) @map("async_flag")
+  callStrategy String   @default("direct") @map("call_strategy") @db.VarChar(16)
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  product      Product  @relation(fields: [productId], references: [productId], onDelete: Cascade)
+
+  @@unique([productId, identifier], name: "uq_action_product_id_identifier")
+  @@index([productId], map: "idx_tm_actions_product")
+  @@map("thing_model_actions")
+}
+
+// ============================================================
+// 6. 设备影子表 (Device Shadow)
+// ============================================================
+model DeviceShadow {
+  deviceId        String   @id @db.VarChar(128)
+  reported        Json     @default("{}")
+  desired         Json     @default("{}")
+  reportedVersion Int      @default(0) @map("reported_version")
+  desiredVersion  Int      @default(0) @map("desired_version")
+  lastReportedAt  DateTime? @map("last_reported_at")
+  lastDesiredAt   DateTime? @map("last_desired_at")
+  metadata        Json     @default("{}")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  device          Device   @relation(fields: [deviceId], references: [deviceId], onDelete: Cascade)
+
+  @@index([lastReportedAt(sort: Desc)], map: "idx_shadows_last_reported")
+  @@map("device_shadows")
+}
+
+// ============================================================
+// 7. 设备属性上报历史表
+// ============================================================
+model DevicePropertyHistory {
+  id        BigInt   @id @default(autoincrement())
+  deviceId  String   @db.VarChar(128)
+  identifier String   @db.VarChar(64)
+  value     Json
+  timestamp DateTime @default(now())
+
+  device    Device   @relation(fields: [deviceId], references: [deviceId], onDelete: Cascade)
+
+  @@index([deviceId, identifier, timestamp(sort: Desc)], map: "idx_prop_hist_device_id_ts")
+  @@map("device_property_history")
+}
+
+// ============================================================
+// 8. 设备事件记录表
+// ============================================================
+model DeviceEventLog {
+  id        BigInt   @id @default(autoincrement())
+  deviceId  String   @db.VarChar(128)
+  eventId   String   @db.VarChar(64)
+  eventType String   @default("info") @db.VarChar(16)
+  payload   Json     @default("{}")
+  timestamp DateTime @default(now())
+
+  device    Device   @relation(fields: [deviceId], references: [deviceId], onDelete: Cascade)
+
+  @@index([deviceId, timestamp(sort: Desc)], map: "idx_event_logs_device_ts")
+  @@index([eventType], map: "idx_event_logs_type")
+  @@map("device_event_logs")
+}
+
+// ============================================================
+// 9. 设备服务调用记录表
+// ============================================================
+model DeviceActionLog {
+  id          BigInt   @id @default(autoincrement())
+  callId      String   @map("call_id") @db.VarChar(64)
+  deviceId    String   @db.VarChar(128)
+  actionId    String   @map("action_id") @db.VarChar(64)
+  inputParams Json     @default("{}") @map("input_params")
+  outputParams Json     @default("{}") @map("output_params")
+  status      String   @default("pending") @db.VarChar(16)
+  errorCode   String?  @map("error_code") @db.VarChar(32)
+  errorMsg    String?  @map("error_msg")
+  createdAt   DateTime @default(now()) @map("created_at")
+  executedAt  DateTime? @map("executed_at")
+  timeoutAt   DateTime? @map("timeout_at")
+
+  device      Device   @relation(fields: [deviceId], references: [deviceId], onDelete: Cascade)
+
+  @@index([deviceId, createdAt(sort: Desc)], map: "idx_action_logs_device_ts")
+  @@index([status], map: "idx_action_logs_status")
+  @@index([callId], map: "idx_action_logs_call_id")
+  @@map("device_action_logs")
+}
