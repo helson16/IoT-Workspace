@@ -15,6 +15,9 @@ export default async function commandParseRoutes(fastify: FastifyInstance) {
   const service = createCommandParseService(fastify.db, {
     info: (obj, msg) => fastify.log.info(obj, msg),
     warn: (obj, msg) => fastify.log.warn(obj, msg),
+    // 上游故障翻译成 502/50003 时, 原始错误只有在服务层这一条日志里留有记录
+    // (app.ts 的 IotError 分支不打日志) —— 少接这一行就等于把可观测性丢了
+    error: (obj, msg) => fastify.log.error(obj, msg),
   });
 
   // POST /api/v1/devices/:deviceId/command:parse - 自然语言 → desired 解析

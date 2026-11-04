@@ -15,6 +15,7 @@ import {
   type ParseLogger,
 } from '../../src/services/command-parse.service.js';
 import type { ThingModelProperty } from '../../src/types/index.js';
+import { UpstreamServiceError } from '../../src/shared/errors.js';
 
 // ============================================================
 // 夹具 — 与 01-nl-shadow-command-test-cases.md 的物模型一致
@@ -73,7 +74,7 @@ function makeDb(properties: ThingModelProperty[] = PROPS) {
   } as unknown as PrismaClient;
 }
 
-const silentLogger: ParseLogger = { info: () => {}, warn: () => {} };
+const silentLogger: ParseLogger = { info: () => {}, warn: () => {}, error: () => {} };
 
 /** 按调用顺序返回预设答案的 fake client */
 function makeClient(responses: Array<Record<string, unknown>>) {
@@ -628,6 +629,7 @@ describe('定时 / 条件护栏', () => {
     const logger: ParseLogger = {
       info: (obj) => logged.push(obj),
       warn: () => {},
+      error: () => {},
     };
     const { client } = makeClient([
       {
@@ -710,7 +712,7 @@ describe('多属性护栏', () => {
 
   it('多属性答案写进调试日志 (要求 4)', async () => {
     const logged: Array<Record<string, unknown>> = [];
-    const logger: ParseLogger = { info: (obj) => logged.push(obj), warn: () => {} };
+    const logger: ParseLogger = { info: (obj) => logged.push(obj), warn: () => {}, error: () => {} };
     const { client } = makeClient([
       {
         intent_actionable: noulAnswer(0.95),
@@ -963,5 +965,122 @@ describe('只读属性被点名时的澄清文案', () => {
 
     expect(res.proposed).toEqual({ target_temperature: 20 });
     expect(res.unknown).toEqual(['序列号']);
+  });
+});
+
+// ============================================================
+// 上游故障 (F-10)
+//
+// 第 4 轮实跑用例表时 G5 撞上的形态: 请求在 Cloudflare 边缘就被 403(没到模型), SDK 把它
+// 包装成一个 message 里装着**上游响应体**的错误 —— 含我们的出口 IP。修之前那条错误会
+// 经 app.ts 的兜底分支变成对外 500, 并把这段响应体原样回显给调用方。
+//
+// tests/ 里没有 HTTP 夹具(全仓库无 .inject), 所以这里断言的是 IotError 自身的字段与
+// toResponse() —— 也就是真正上线的那个 body 的内容来源。路由那段"抛 IotError → 吐 502"
+// 的接线(app.ts:105-111, 3 行直通)没有自动化覆盖, 端到端形状由下一轮用例表实跑给出。
+// ============================================================
+
+describe('上游故障 (F-10)', () => {
+  /** 照抄第 4 轮在 G5 上真实观测到的形态: Cloudflare 拦截页 + 我们的出口 IP */
+  const upstreamRefusal = () =>
+    new Error(
+      'TypeSafe request failed: 403 <!DOCTYPE html><html><head><title>Access denied</title>' +
+        '</head><body>cloudflare Ray ID: a3f696b959ae15e5 ｜ 154.21.95.7</body></html>',
+    );
+
+  /** 把响应体里**不该出现**的上游内容挑出来 —— 空数组才算干净 */
+  const leaked = (s: string) =>
+    ['DOCTYPE', 'cloudflare', 'Ray ID', '154.21.95.7'].filter((k) => s.includes(k));
+
+  const captureLogger = () => {
+    const logged: Array<Record<string, unknown>> = [];
+    const logger: ParseLogger = {
+      info: () => {},
+      warn: () => {},
+      error: (obj) => logged.push(obj),
+    };
+    return { logger, logged };
+  };
+
+  it('T1: 第一问被上游拒 → 502/50003, 响应体不含上游内容', async () => {
+    const { logger, logged } = captureLogger();
+    const systemOne = vi.fn(async (): Promise<never> => {
+      throw upstreamRefusal();
+    });
+    const svc = new CommandParseService(makeDb(), logger, { systemOne } as unknown as ParseClient);
+
+    const err = await svc
+      .parse('dev-thermo-01', '把目标温度调到20度')
+      .catch((e: unknown) => e as UpstreamServiceError);
+
+    expect(err).toBeInstanceOf(UpstreamServiceError);
+    expect(err.code).toBe(50003);
+    expect(err.statusCode).toBe(502);
+    // 对外文案固定 —— 不含上游响应体
+    expect(err.message).toBe('解析服务暂时不可用, 请稍后重试');
+    const body = err.toResponse();
+    expect(leaked(`${body.message} ${JSON.stringify(body.details)}`)).toEqual([]);
+    // 原始错误只进服务端日志: 日志里**有**出口 IP, 才算"没把可观测性一起丢掉"
+    expect(logged).toHaveLength(1);
+    expect(String(logged[0]!['errMessage'])).toContain('154.21.95.7');
+    expect(String(logged[0]!['step'])).toBe('typesafe');
+  });
+
+  it('T2: 第二问被上游拒 → 同样受控 (证明取值解析那条路径也被包住)', async () => {
+    let n = 0;
+    const systemOne = vi.fn(async () => {
+      n++;
+      if (n === 1) {
+        return {
+          model: 'jev-test-1',
+          answers: {
+            intent_actionable: noulAnswer(0.95),
+            mentions_timing: noulAnswer(0.02),
+            mentions_multiple: noulAnswer(0.02),
+            target_property: choiceAnswer('target_temperature'),
+          },
+          usage: { input_tokens: 10, output_tokens: 5 },
+        };
+      }
+      throw upstreamRefusal();
+    });
+    const svc = new CommandParseService(makeDb(), silentLogger, {
+      systemOne,
+    } as unknown as ParseClient);
+
+    const err = await svc
+      .parse('dev-thermo-01', '把目标温度调到20度')
+      .catch((e: unknown) => e as UpstreamServiceError);
+
+    expect(n).toBe(2); // 确实走到了第二问, 不是被第一问的护栏短路
+    expect(err).toBeInstanceOf(UpstreamServiceError);
+    expect(err.statusCode).toBe(502);
+    expect(err.code).toBe(50003);
+    expect(leaked(JSON.stringify(err.toResponse()))).toEqual([]);
+  });
+
+  it('T3: 缺 TYPESAFE_API_KEY → 归入上游类 (不再是 400/40001), 且不被兜底改写', async () => {
+    // 用 save/restore 而非 vi.stubEnv: 不依赖 vitest 版本
+    const prev = process.env['TYPESAFE_API_KEY'];
+    delete process.env['TYPESAFE_API_KEY'];
+    try {
+      const { logger, logged } = captureLogger();
+      // 刻意不传 client, 逼 getClient() 走缺 key 分支
+      const svc = new CommandParseService(makeDb(), logger);
+
+      const err = await svc
+        .parse('dev-thermo-01', '把目标温度调到20度')
+        .catch((e: unknown) => e as UpstreamServiceError);
+
+      expect(err).toBeInstanceOf(UpstreamServiceError);
+      expect(err.statusCode).toBe(502);
+      expect(err.code).toBe(50003);
+      // 保留"未配置"这条文案 —— 证明它被 passthrough 原样透出, 没被兜底盖成"暂时不可用"
+      expect(err.message).toBe('解析服务未配置, 请联系管理员');
+      expect(logged[0]!['missing']).toBe('TYPESAFE_API_KEY');
+    } finally {
+      if (prev === undefined) delete process.env['TYPESAFE_API_KEY'];
+      else process.env['TYPESAFE_API_KEY'] = prev;
+    }
   });
 });
