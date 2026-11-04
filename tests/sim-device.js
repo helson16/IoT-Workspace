@@ -138,7 +138,7 @@ class SimDevice {
             clientToken: `sim-evt-${Date.now()}`,
             params: {
               event_id: 'high_temperature_alarm',
-              event_type: 'alert',
+              event_type: 'warn',
               event_time: Date.now(),
               output_params: { current_temp: temp, threshold: 30 },
             },

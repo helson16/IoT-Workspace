@@ -255,6 +255,41 @@ export interface GroupMemberDevice {
   lastLoginAt: string | null;
 }
 
+// ---------------- 监控运维 ----------------
+
+export interface OpsMetrics {
+  device_total: number;
+  online: number;
+  offline: number;
+  not_activated: number;
+  disabled: number;
+  online_rate: number;
+  messages_today: number;
+  events_today: number;
+  alarms_today: number;
+  actions_today: number;
+  hourly_messages: Array<{ hour: string; count: number }>;
+}
+
+export interface OpsLogItem {
+  id: string;
+  time: string;
+  type: "property" | "event" | "action" | "status";
+  device_id: string;
+  device_name: string;
+  product_name: string;
+  level: string;
+  summary: string;
+}
+
+export interface OpsLogQuery {
+  type?: "all" | "property" | "event" | "action" | "status";
+  device_id?: string;
+  keyword?: string;
+  page?: number;
+  page_size?: number;
+}
+
 // ---------------- API 方法 ----------------
 
 export const api = {
@@ -324,6 +359,24 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ device_ids: deviceIds }),
     }),
+
+  // 监控运维
+  getOpsMetrics: () => apiFetch<OpsMetrics>("/api/v1/ops/metrics"),
+  getOpsLogs: (query: OpsLogQuery = {}) => {
+    const params = new URLSearchParams();
+    if (query.type) params.set("type", query.type);
+    if (query.device_id) params.set("device_id", query.device_id);
+    if (query.keyword) params.set("keyword", query.keyword);
+    if (query.page) params.set("page", String(query.page));
+    if (query.page_size) params.set("page_size", String(query.page_size));
+    const qs = params.toString();
+    return apiFetch<{
+      total: number;
+      page: number;
+      page_size: number;
+      items: OpsLogItem[];
+    }>(`/api/v1/ops/logs${qs ? `?${qs}` : ""}`);
+  },
 
   // 设备(全局)
   getDevices: (params: {

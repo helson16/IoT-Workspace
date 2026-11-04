@@ -193,3 +193,21 @@ Stage Summary:
 - 质量门： lint 0 / root tsc 0 / backend tsc 0 / 54 单测通过 / console 0 产品错误
 - 分组功能全链路闭环，测试数据已清理（0 组/12 设备）
 - 范围外 follow-up： 设备列表页加分组列/筛选、分组批量指令下发
+
+---
+Task ID: 11
+Agent: Main Agent
+Task: 监控运维页面接入真实数据
+
+Work Log:
+- 环境恢复： 隔周服务全下线(机器重启)，重启 PG(已在跑)/Redis/后端/前端/模拟器；清理遗留测试设备「78s」恢复 12 台基线
+- 后端： ops.routes.ts 两端点 — GET /ops/metrics(设备在线率/今日消息/事件/告警/服务调用 + 24h 逐小时消息桶 JS 补零)；GET /ops/logs(统一日志流： 属性上报/事件/服务调用/上下线 UNION ALL 原生 SQL，type/device_id/keyword 筛选 + 分页，BigInt id ::text 防 JSON 序列化崩溃)
+- 前端： ops-monitor-page 全量重写 — 4 指标卡(在线率进度条)、recharts 24h 趋势图、日志流(5 Tab 筛选/搜索/分页/10s 自动刷新/keepPreviousData 防闪烁)
+- 修复循环 2 轮： ① UNION 类型不匹配(bigint vs varchar)→ count 子查询补 ::text；② 发现事件级别全是非标准「alert」(模拟器历史遗留)→ 告警计数纳入 alert、前端 badge 兼容、模拟器改写标准 warn
+- app.ts 顺手清 2 个 IDE 诊断(未用 ValidationError 导入/无效 await)
+- 浏览器 E2E： 在线率 50%(6/12)与 DB 一致、日志流实时(20:43:30 最新行)、事件/上下线 Tab 筛选正确、搜索 light 过滤 2 行、分页第 3/1620 页、console 0 产品错误(2 条为本轮测试脚本自身转义噪音)
+
+Stage Summary:
+- 质量门： lint 0 / 双端 tsc 0 / 54 单测通过
+- 监控运维成为第 7 个真实数据页面；统一日志流打通 4 类数据源
+- 教训： 多分支 UNION 的所有列类型必须显式对齐(::text)；数据生产方(模拟器)的枚举值要与 schema 标准一致，历史脏值需消费端兼容

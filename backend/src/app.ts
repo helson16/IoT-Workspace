@@ -4,7 +4,7 @@ import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 
 import { config, isDev } from './config/index.js';
-import { IotError, ValidationError, InternalError } from './shared/errors.js';
+import { IotError, InternalError } from './shared/errors.js';
 
 import prismaPlugin from './plugins/prisma.js';
 import redisPlugin from './plugins/redis.js';
@@ -16,6 +16,7 @@ import shadowRoutes from './routes/shadow.routes.js';
 import internalRoutes from './routes/internal.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import deviceGroupRoutes from './routes/device-group.routes.js';
+import opsRoutes from './routes/ops.routes.js';
 
 const fastify = Fastify({
   logger: {
@@ -82,7 +83,7 @@ fastify.addHook('onRequest', async (request, reply) => {
   }
 
   try {
-    await fastify.jwt.verify(authHeader.slice('Bearer '.length));
+    fastify.jwt.verify(authHeader.slice('Bearer '.length));
   } catch (err) {
     reply.code(401).send({
       code: 40102,
@@ -146,5 +147,6 @@ await fastify.register(shadowRoutes);
 await fastify.register(internalRoutes);
 await fastify.register(statsRoutes);
 await fastify.register(deviceGroupRoutes);
+await fastify.register(opsRoutes);
 
 export default fastify;
