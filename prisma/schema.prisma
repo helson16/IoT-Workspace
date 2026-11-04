@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Device {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  type        String   // sensor, actuator, gateway, camera
+  status      String   @default("offline") // online, offline, warning, error
+  protocol    String   @default("MQTT") // MQTT, CoAP, HTTP, WebSocket
+  ipAddress   String?
+  macAddress  String?
+  firmware    String?
+  location    String?
+  groupId     String?
+  group       DeviceGroup? @relation(fields: [groupId], references: [id])
+  properties  String   @default("{}") // JSON string for flexible device properties
+  lastSeenAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  telemetry   Telemetry[]
+  commands    Command[]
+  alertRules  AlertRule[]
+  alerts      Alert[]
+}
+
+model DeviceGroup {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String   @default("#6366f1")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  devices     Device[]
+}
+
+model Telemetry {
+  id        String   @id @default(cuid())
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  key       String   // temperature, humidity, pressure, etc.
+  value     Float
+  unit      String?  // °C, %, hPa, etc.
+  timestamp DateTime @default(now())
+}
+
+model Command {
+  id        String   @id @default(cuid())
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  command   String
+  payload   String?
+  status    String   @default("pending") // pending, sent, success, failed
+  response  String?
+  createdAt DateTime @default(now())
+  executedAt DateTime?
+}
+
+model AlertRule {
+  id        String   @id @default(cuid())
+  name      String
+  deviceId  String?
+  device    Device?  @relation(fields: [deviceId], references: [id])
+  metricKey String
+  condition String   // gt, lt, eq, gte, lte
+  threshold Float
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  alerts    Alert[]
+}
+
+model Alert {
+  id        String   @id @default(cuid())
+  ruleId    String
+  rule      AlertRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  deviceId  String?
+  device    Device?  @relation(fields: [deviceId], references: [id])
+  level     String   @default("info") // info, warning, critical
+  message   String
+  acknowledged Boolean @default(false)
+  createdAt DateTime @default(now())
+}
