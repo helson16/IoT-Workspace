@@ -686,3 +686,21 @@ Stage Summary:
 - sampleSeries 抽稀 + buildTelemetryTrend 模式可复用于其他设备的时序图表需求
 - 通信日志 UNION 5 类方案(参考 ops.routes.ts)把 forward_logs 首次纳入设备维度消费
 - 遗留未提交文件 STATUS.md / case-table.mts(typesafe 线程)保持原样未纳入本次提交
+
+---
+Task ID: 21
+Agent: Test Engineer Agent (TypeSafe)
+Task: G5 期望值决策落地（方案① 环境性跳过）+ TypeSafe 线程收尾
+
+Work Log:
+- 背景: 上一轮（Task 19/20 间）已把「未完成」第 1 条的方案①写进 case-table.mts（classifyNonOk + LEAK_MARKERS + 跳过/失败分流 + 过半跳过退出码 1），但未验证、未提交，作为遗留改动挂在工作区
+- 本轮验证: `npx tsx --env-file=.env tools/case-table.mts --dry-run` → 退出码 0，32 条用例，G5 why 列显示新文案（脚本不在质量门覆盖内，dry-run 是它唯一的语法守卫）
+- 质量门（三项退出码全 0，输出落盘 /tmp/gate-{tsc,test,lint}.txt）: tsc 0 error ｜ 273 passed (11 files)，command-parse.test.ts 84 条不变 ｜ lint 0 error / 123 warning
+- 与 STATUS 旧记录（183/6 files、109 warning）的差异定性: DA 在 Task 17–20 新增 5 个测试文件（+90 条）与 14 个 warning，非本工作流改动；实测为准，已把 STATUS 改对再收尾（协议 §5 第 4 条）
+- 凭据检查（协议 §4 第 7 条）: git status 无 .env；backend/src/ 与 tools/ 中 TYPESAFE_API_KEY 仅 process.env 读取，无字面值
+- STATUS.md 覆盖式更新: G5 从「未完成」第 1 条移入「已完成」；「未完成」重排（F-1 升为第 1 条，新增「G5 跳过分支未经实跑在线验证」条目）；「下一步」预期值更新为本轮实测；「质量门」写明数值变化原因；多处「本轮」标注区分本轮/前轮
+- 未做（如实记录）: 整表实跑（约 43 次付费调用）—— 本轮改的是检查器脚本自身、非阈值/Noul/Choice，按协议 §8 无强制重跑义务；G5 跳过分支的真实触发留待下次实跑顺带验证
+
+Stage Summary:
+- 工作区遗留未提交改动清零；「未完成」第 1 条（G5 期望值决策）关闭，信号机制恢复（退出码恒 1 的固定噪声消除）
+- 下一个 TA 线程入口: F-1 双温度属性歧义（候选集区分信息 / 二次确认，待设计）
