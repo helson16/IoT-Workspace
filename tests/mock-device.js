@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 /**
  * mock-device.js — 物联网虚拟设备 E2E 联调脚本
  *
@@ -282,7 +281,7 @@ function startPropertyReporting() {
 // 下行消息处理
 // ============================================================
 
-function handlePropertyDown(topic, payload) {
+function handlePropertyDown(_topic, payload) {
   log('DOWN', 'Property set command received', payload);
 
   // 模拟设备执行: 更新本地状态后上报回复
@@ -306,7 +305,7 @@ function handlePropertyDown(topic, payload) {
   }
 }
 
-function handleActionDown(topic, payload) {
+function handleActionDown(_topic, payload) {
   log('ACTION', `Action invoked: ${payload.params?.action_id || 'unknown'}`, payload);
 
   const actionId = payload.params?.action_id || 'unknown';
@@ -347,7 +346,7 @@ function handleActionDown(topic, payload) {
   log('ACTION', 'Action reply sent', { actionId, code, msg });
 }
 
-function handleShadowSync(topic, payload) {
+function handleShadowSync(_topic, payload) {
   const delta = payload.payload?.state?.delta;
   if (delta && Object.keys(delta).length > 0) {
     log('SHADOW', 'Delta received (desired state to sync)', delta);
@@ -357,7 +356,7 @@ function handleShadowSync(topic, payload) {
     for (const [key, value] of Object.entries(delta)) {
       reported[key] = value;
       if (key === 'target_temperature') {
-        state.baseTemp = value as number;
+        state.baseTemp = Number(value);
       }
     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Sidebar } from "@/components/tencent/sidebar";
 import { TopNav } from "@/components/tencent/top-nav";
 import { useAppStore, type PageKey } from "@/stores/app-store";
@@ -38,9 +38,12 @@ export default function HomePage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const PageComponent = pageMap[currentPage] || OverviewPage;
 
-  useEffect(() => {
+  // 页面切换时关闭移动端菜单(render 期间调整 state, 避免 effect 级联渲染)
+  const [prevPage, setPrevPage] = useState(currentPage);
+  if (prevPage !== currentPage) {
+    setPrevPage(currentPage);
     setMobileMenuOpen(false);
-  }, [currentPage]);
+  }
 
   const overlayClass = mobileMenuOpen ? "block" : "hidden";
   const sidebarClass = "fixed lg:static inset-y-0 left-0 z-20 transform transition-transform duration-200 " + (mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0");

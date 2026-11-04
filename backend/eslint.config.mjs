@@ -2,7 +2,7 @@ import eslint from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
 import prettierConfig from 'eslint-config-prettier';
 
-export default [
+const config = [
   { ignores: ['dist/', 'node_modules/', 'prisma/'] },
   {
     files: ['src/**/*.ts'],
@@ -19,3 +19,5 @@ export default [
   },
   prettierConfig,
 ];
+
+export default config;

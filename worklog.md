@@ -132,3 +132,23 @@ Stage Summary:
 - 测试覆盖三大纯逻辑模块：crypto（凭证）/ validator（物模型校验）/ shadow（影子状态机），共 50 用例
 - 发现并修复 validateDefinition 全量拒绝真实负载的 schema oneOf 缺陷（单测核心价值验证）
 - npm test 可重复执行，PostCSS 崩溃已消除
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: IDE Problems 面板 18 个诊断清零（tsconfig 孤儿文件误报 + ESLint 修复）
+
+Work Log:
+- 定位 18 = 9（backend/tests 被 root 与 backend 两个 tsconfig 同时排除 → IDE 用默认 ES5/CommonJS 选项检查 → TS18028/TS2307/TS1343 误报）+ 4（examples/websocket 与 mini-services/mqtt-service 孤儿文件 socket.io 未装 → TS2307）+ 5（ESLint 3 错误 2 警告）
+- 新增 backend/tests/tsconfig.json（extends 主配置 + noEmit + rootDir 提升至 backend/ + 覆盖 exclude 避免父级 "tests" 排除自身），9 个误报清零
+- 新增 examples/websocket/tsconfig.json（paths @/* → ../../src/* + types:["node"]）与 mini-services/mqtt-service/tsconfig.json，各配 shims.d.ts 声明 socket.io（遗留演示目录依赖未安装），4 个误报清零
+- page.tsx：移动端菜单关闭从 useEffect setState 重构为 React 官方「render 期间调整 state」模式（prevPage 对比），消除级联渲染
+- use-mobile.ts：matchMedia 初始化改经 onChange() 回调统一路径
+- carousel.tsx（shadcn vendored，无业务引用）：embla 官方模式加精准 eslint-disable 注释
+- tests/mock-device.js：移除无用 eslint-disable；修复 JS 文件中的 TS 断言 `value as number` → `Number(value)`；3 处未用 topic 参数改 _topic
+- backend/eslint.config.mjs：匿名默认导出改为先赋值变量（消除 import/no-anonymous-default-export 警告）
+
+Stage Summary:
+- ESLint 0 问题；root/backend/tests 三个 tsc 项目 + 两个遗留目录 tsc 全部零错误；50/50 单测通过
+- 浏览器冒烟：导航切换正常（产品页/设备页 12 行），render 期 state 调整无死循环，console 仅剩 dev HMR 噪音
+- 教训：tsconfig exclude 会连带 IDE 孤儿文件误报 — 每个含 TS 的目录都应有归属 tsconfig 或 shim
