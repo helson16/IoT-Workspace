@@ -14,6 +14,7 @@ import deviceRoutes from './routes/device.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import shadowRoutes from './routes/shadow.routes.js';
 import internalRoutes from './routes/internal.routes.js';
+import statsRoutes from './routes/stats.routes.js';
 
 const fastify = Fastify({
   logger: {
@@ -49,6 +50,47 @@ await fastify.register(rateLimit, {
 
 await fastify.register(prismaPlugin);
 await fastify.register(redisPlugin);
+
+// ============================================================
+// JWT 认证保护: /api/v1/* 必须携带 Bearer Token
+// 放行: /health, /api/v1/auth/*(token 签发), /api/internal/*(内部 secret 自行校验)
+// ============================================================
+const PUBLIC_PATH_PREFIXES = ['/api/v1/auth/'];
+
+fastify.addHook('onRequest', async (request, reply) => {
+  const url = request.url.split('?')[0] ?? request.url;
+
+  if (url === '/health' || url.startsWith('/api/internal/')) {
+    return;
+  }
+  if (!url.startsWith('/api/v1/')) {
+    return;
+  }
+  if (PUBLIC_PATH_PREFIXES.some((p) => url.startsWith(p))) {
+    return;
+  }
+
+  const authHeader = request.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    reply.code(401).send({
+      code: 40101,
+      message: '缺少访问令牌, 请先通过 /api/v1/auth/platform-token 获取',
+      details: [],
+    });
+    return;
+  }
+
+  try {
+    await fastify.jwt.verify(authHeader.slice('Bearer '.length));
+  } catch (err) {
+    reply.code(401).send({
+      code: 40102,
+      message: '访问令牌无效或已过期',
+      details: [],
+    });
+    return;
+  }
+});
 
 fastify.setErrorHandler((error: FastifyError | Error, request, reply) => {
   if (error instanceof IotError) {
@@ -101,5 +143,6 @@ await fastify.register(deviceRoutes);
 await fastify.register(authRoutes);
 await fastify.register(shadowRoutes);
 await fastify.register(internalRoutes);
+await fastify.register(statsRoutes);
 
 export default fastify;

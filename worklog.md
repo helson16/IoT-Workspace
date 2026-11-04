@@ -90,3 +90,26 @@ Stage Summary:
 - 4 个交付物：docker-compose.yml、init-infra.sh、tests/mock-device.js、PHASE3_README.md
 - EMQX HTTP Auth 完整闭环：设备 CONNECT → EMQX → Fastify auth endpoint → DB 密钥校验 → 200/401
 - mock-device.js 实现完整设备生命周期：注册 → 认证 → 上报 → 接收指令 → 影子同步
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: 前后端联调 — 前端控制台接入真实后端 API（无 Docker 环境）
+
+Work Log:
+- 环境自诊断：本机无 Docker，PG 16 + Redis 7 改用 Homebrew 原生实例（initdb 初始化 + 最简配置启动）；Bun 不可用改用 Node v22 + npm
+- 后端 JWT 认证保护：app.ts 新增全局 onRequest hook（放行 /health、/api/v1/auth/*、/api/internal/*，其余 v1 路由强制 Bearer，401 返回 40101）
+- 新增 stats.routes.ts：GET /api/v1/stats/overview 聚合产品/设备计数 + 设备动态（event_logs + property_history + lastLoginAt 派生上线事件合并取最近 10 条）
+- device.routes.ts 扩展 3 个全局端点：GET /devices（跨产品列表，status/keyword 筛选 + status_counts）、GET /devices/:id（详情）、GET /devices/:id/telemetry（最新遥测）
+- product.service.ts 列表增加 deviceCount/onlineCount 聚合
+- 编写 backend/prisma/seed.ts：4 产品（温控器/照明灯/网关/工业传感器，含完整物模型）+ 12 设备（6 在线/4 离线/2 未激活）+ 影子初始化
+- 前端 API 层 src/lib/api/client.ts：平台 Token 自动获取缓存 + 401 刷新重试一次 + {code,message,data} 统一解包 + 全量类型定义
+- 四页面接入真实 API（保持 UI 不变仅换数据源）：概览（10s 轮询）、产品管理（新建产品 Dialog + 删除）、设备管理（注册设备 Dialog + 后端筛选/搜索）、设备详情（5s 轮询遥测 + 影子 desired 下发）；统一 loading/空态/错误重试
+- 编写 tests/sim-device.js 设备模拟器：无 EMQX 场景经 internal HTTP 回调模拟设备上线/属性上报（正弦波温湿度）/高温告警事件/离线，数据链路与 EMQX Webhook 完全等价
+- tsconfig.json 根目录排除 backend/（避免前后端 Prisma client 类型合并冲突）
+- E2E 验证：API 冒烟（token/overview/products/devices/detail/shadow/telemetry 全部 code=0）+ 浏览器视觉验证 7/7 PASS（含 8s 实时数据变化 temperature 24.7→25.9）+ 双端 tsc --noEmit 零错误 + 未认证请求 401 拦截
+
+Stage Summary:
+- 数据流转闭环打通：sim-device → internal API → 物模型校验 → 影子/历史表 → 前端轮询渲染
+- 设计文档：.ai-docs/designs/frontend-backend-integration-design.md（含 7 项验收标准全部实测 PASS）
+- 服务运行：Next.js(:3000) + Fastify(:3200) + PG(:5432) + Redis(:6379) + 模拟器（5s 周期上报）

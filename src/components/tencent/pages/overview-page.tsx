@@ -1,27 +1,54 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { api, type ActivityItem, type OverviewStats } from "@/lib/api/client";
 import { useAppStore } from "@/stores/app-store";
 import {
-  FolderOpen, Cpu, Monitor, Wifi,
+  FolderOpen, Cpu, Monitor, Wifi, RefreshCw,
 } from "lucide-react";
 
-const statCards = [
-  { label: "项目总数", value: 3, Icon: FolderOpen, color: "text-[#0052D9]", bg: "bg-[#E6F0FF]" },
-  { label: "产品总数", value: 10, Icon: Cpu, color: "text-[#2BA471]", bg: "bg-[#E8F8F0]" },
-  { label: "设备总数", value: 218, Icon: Monitor, color: "text-[#ED7B2F]", bg: "bg-[#FFF3E8]" },
-  { label: "在线设备", value: 133, Icon: Wifi, color: "text-[#7B61FF]", bg: "bg-[#F0EDFF]" },
-];
+const activityStatusColor: Record<string, string> = {
+  success: "bg-[#2BA471]",
+  info: "bg-[#0052D9]",
+  warning: "bg-[#ED7B2F]",
+  error: "bg-[#BBBFC4]",
+};
 
-const activityLog = [
-  { time: "10:32", type: "设备上线", device: "网关设备-GW01", status: "success" },
-  { time: "10:28", type: "属性上报", device: "卧室温控器-02", status: "info" },
-  { time: "10:25", type: "设备上线", device: "智能门锁-DL03", status: "success" },
-  { time: "10:18", type: "告警触发", device: "烟感探测器-SM02", status: "warning" },
-  { time: "10:15", type: "固件升级", device: "温湿度传感器-TH05", status: "info" },
-  { time: "10:10", type: "设备离线", device: "摄像头-CAM01", status: "error" },
-  { time: "09:58", type: "属性上报", device: "空调控制器-AC01", status: "info" },
-  { time: "09:45", type: "设备上线", device: "智能灯控-LC02", status: "success" },
-];
+function StatCard({ label, value, Icon, color, bg, loading }: {
+  label: string; value: number | undefined; Icon: React.ComponentType<{ className?: string }>;
+  color: string; bg: string; loading: boolean;
+}) {
+  return (
+    <div className="bg-white rounded border border-[#E5E6EB] p-5 hover:shadow-md transition-all duration-200 cursor-pointer">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-[13px] text-[#888] mb-2.5">{label}</div>
+          <div className="text-[32px] font-semibold text-[#1E293B] leading-none tracking-tight">
+            {loading ? <span className="inline-block w-10 h-8 bg-[#F3F4F6] rounded animate-pulse align-middle" /> : (value ?? 0)}
+          </div>
+        </div>
+        <div className={"w-11 h-11 rounded-lg flex items-center justify-center " + bg}>
+          <Icon className={"w-5 h-5 " + color} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityRow({ item }: { item: ActivityItem }) {
+  const time = new Date(item.time);
+  const timeStr = isNaN(time.getTime())
+    ? item.time
+    : time.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return (
+    <div className="flex items-center px-5 py-3 hover:bg-[#F9FAFB] transition-colors">
+      <span className="text-[13px] text-[#999] w-12 flex-shrink-0 font-mono">{timeStr}</span>
+      <span className={"w-[6px] h-[6px] rounded-full mr-3 flex-shrink-0 " + (activityStatusColor[item.status] || "bg-[#999]")} />
+      <span className="text-[13px] text-[#333] font-medium">{item.type}</span>
+      <span className="text-[13px] text-[#666] ml-2 truncate">{item.device_name}</span>
+    </div>
+  );
+}
 
 const quickEntries = [
   { label: "新建产品", Icon: Cpu, color: "text-[#0052D9]", bg: "bg-[#E6F0FF]" },
@@ -32,37 +59,28 @@ const quickEntries = [
   { label: "API Explorer", Icon: Cpu, color: "text-[#E34D59]", bg: "bg-[#FDECEE]" },
 ];
 
-const statusIconColor: Record<string, string> = {
-  success: "bg-[#2BA471]",
-  info: "bg-[#0052D9]",
-  warning: "bg-[#ED7B2F]",
-  error: "bg-[#BBBFC4]",
-};
-
 export function OverviewPage() {
   const { setCurrentPage } = useAppStore();
+
+  const { data: stats, isLoading, isError, error, refetch } = useQuery<OverviewStats>({
+    queryKey: ["overview"],
+    queryFn: () => api.getOverview(10),
+    refetchInterval: 10_000,
+  });
+
+  const statCards = [
+    { label: "项目总数", value: stats?.project_count, Icon: FolderOpen, color: "text-[#0052D9]", bg: "bg-[#E6F0FF]" },
+    { label: "产品总数", value: stats?.product_count, Icon: Cpu, color: "text-[#2BA471]", bg: "bg-[#E8F8F0]" },
+    { label: "设备总数", value: stats?.device_count, Icon: Monitor, color: "text-[#ED7B2F]", bg: "bg-[#FFF3E8]" },
+    { label: "在线设备", value: stats?.online_count, Icon: Wifi, color: "text-[#7B61FF]", bg: "bg-[#F0EDFF]" },
+  ];
 
   return (
     <div className="space-y-5">
       {/* 4 Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((card) => (
-          <div
-            key={card.label}
-            className="bg-white rounded border border-[#E5E6EB] p-5 hover:shadow-md transition-all duration-200 cursor-pointer"
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-[13px] text-[#888] mb-2.5">{card.label}</div>
-                <div className="text-[32px] font-semibold text-[#1E293B] leading-none tracking-tight">
-                  {card.value}
-                </div>
-              </div>
-              <div className={"w-11 h-11 rounded-lg flex items-center justify-center " + card.bg}>
-                <card.Icon className={"w-5 h-5 " + card.color} />
-              </div>
-            </div>
-          </div>
+          <StatCard key={card.label} {...card} loading={isLoading} />
         ))}
       </div>
 
@@ -72,24 +90,39 @@ export function OverviewPage() {
         <div className="bg-white rounded border border-[#E5E6EB]">
           <div className="flex items-center justify-between px-5 py-3 border-b border-[#E5E6EB]">
             <h3 className="text-[14px] font-medium text-[#333]">设备动态</h3>
-            <button className="text-[12px] text-[#0052D9] hover:underline">查看全部</button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => refetch()}
+                className="text-[12px] text-[#888] hover:text-[#0052D9] flex items-center gap-1"
+                title="刷新"
+              >
+                <RefreshCw className={"w-3.5 h-3.5 " + (isLoading ? "animate-spin" : "")} />
+              </button>
+              <span className="text-[12px] text-[#BBBFC4]">10s 自动刷新</span>
+            </div>
           </div>
           <div className="divide-y divide-[#F0F0F0]">
-            {activityLog.map((item, idx) => (
-              <div
-                key={idx}
-                className="flex items-center px-5 py-3 hover:bg-[#F9FAFB] transition-colors"
-              >
-                <span className="text-[13px] text-[#999] w-12 flex-shrink-0 font-mono">
-                  {item.time}
-                </span>
-                <span
-                  className={"w-[6px] h-[6px] rounded-full mr-3 flex-shrink-0 " + (statusIconColor[item.status] || "bg-[#999]")}
-                />
-                <span className="text-[13px] text-[#333] font-medium">{item.type}</span>
-                <span className="text-[13px] text-[#666] ml-2 truncate">{item.device}</span>
+            {isLoading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center px-5 py-3">
+                  <div className="w-10 h-4 bg-[#F3F4F6] rounded animate-pulse" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-[#E5E6EB] mx-3" />
+                  <div className="w-20 h-4 bg-[#F3F4F6] rounded animate-pulse" />
+                  <div className="w-32 h-4 bg-[#F3F4F6] rounded animate-pulse ml-2" />
+                </div>
+              ))
+            ) : isError ? (
+              <div className="py-10 text-center">
+                <div className="text-[13px] text-[#E34D59] mb-2">数据加载失败: {(error as Error).message}</div>
+                <button onClick={() => refetch()} className="text-[13px] text-[#0052D9] hover:underline">
+                  重新加载
+                </button>
               </div>
-            ))}
+            ) : !stats || stats.recent_activity.length === 0 ? (
+              <div className="py-10 text-center text-[13px] text-[#BBBFC4]">暂无设备动态</div>
+            ) : (
+              stats.recent_activity.map((item, idx) => <ActivityRow key={idx} item={item} />)
+            )}
           </div>
         </div>
 
@@ -104,7 +137,7 @@ export function OverviewPage() {
                 key={entry.label}
                 onClick={() => {
                   if (entry.label === "新建产品" || entry.label === "API Explorer") setCurrentPage("product-list");
-                  else if (entry.label === "注册设备") setCurrentPage("device-list");
+                  else if (entry.label === "注册设备" || entry.label === "数据监控") setCurrentPage("device-list");
                   else if (entry.label === "设备日志") setCurrentPage("log-service");
                 }}
                 className="flex flex-col items-center gap-2.5 p-3 rounded hover:bg-[#F9FAFB] hover:shadow-sm transition-all duration-200 group"
