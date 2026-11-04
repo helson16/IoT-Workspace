@@ -1,56 +1,95 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError, type DeviceItem } from "@/lib/api/client";
+import { useAppStore } from "@/stores/app-store";
 import {
-  Search, RefreshCw, Plus, MoreHorizontal, ChevronRight, Check,
+  Search, RefreshCw, Plus, MoreHorizontal, ChevronRight, Check, X,
 } from "lucide-react";
-
-const devices = [
-  { name: "客厅温控器-01", product: "智能温控器", status: "online", lastOnline: "2025-08-25 10:30", firmware: "v2.1.3", created: "2025-08-15" },
-  { name: "卧室温控器-02", product: "智能温控器", status: "online", lastOnline: "2025-08-25 10:28", firmware: "v2.1.3", created: "2025-08-15" },
-  { name: "智能门锁-DL01", product: "智能门锁", status: "online", lastOnline: "2025-08-25 10:25", firmware: "v1.8.0", created: "2025-08-12" },
-  { name: "网关设备-GW01", product: "工业网关", status: "online", lastOnline: "2025-08-25 10:32", firmware: "v2.3.1", created: "2025-08-10" },
-  { name: "门禁传感器-D1", product: "智能门锁", status: "online", lastOnline: "2025-08-25 10:20", firmware: "v1.5.2", created: "2025-08-12" },
-  { name: "智能灯控-LC01", product: "智能灯控", status: "offline", lastOnline: "2025-08-24 18:00", firmware: "v1.2.0", created: "2025-08-05" },
-  { name: "烟感探测器-SM02", product: "环境传感器", status: "offline", lastOnline: "2025-08-24 09:00", firmware: "v1.0.5", created: "2025-08-08" },
-  { name: "摄像头-CAM01", product: "智能门锁", status: "inactive", lastOnline: "—", firmware: "—", created: "2025-08-12" },
-];
 
 const statusConfig: Record<string, { dot: string; label: string; textColor: string; bg: string }> = {
   online: { dot: "tc-status-online", label: "在线", textColor: "text-[#2BA471]", bg: "bg-[#E8F8F0]" },
   offline: { dot: "tc-status-offline", label: "离线", textColor: "text-[#999]", bg: "bg-[#F3F4F6]" },
-  inactive: { dot: "tc-status-inactive", label: "未激活", textColor: "text-[#E34D59]", bg: "bg-[#FDECEE]" },
+  "not-activated": { dot: "tc-status-inactive", label: "未激活", textColor: "text-[#E34D59]", bg: "bg-[#FDECEE]" },
+  disabled: { dot: "tc-status-inactive", label: "已禁用", textColor: "text-[#E34D59]", bg: "bg-[#FDECEE]" },
 };
 
-type DeviceStatus = "all" | "online" | "offline" | "inactive";
+type DeviceStatus = "all" | "online" | "offline" | "not-activated";
+
+function formatDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return isNaN(d.getTime())
+    ? String(iso)
+    : d.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+}
 
 export function DeviceListPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DeviceStatus>("all");
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [deviceName, setDeviceName] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [formError, setFormError] = useState("");
+  const [registeredSecret, setRegisteredSecret] = useState<{ name: string; secret: string } | null>(null);
 
-  const totalCount = devices.length;
-  const onlineCount = devices.filter((d) => d.status === "online").length;
-  const offlineCount = devices.filter((d) => d.status === "offline").length;
-  const inactiveCount = devices.filter((d) => d.status === "inactive").length;
+  const queryClient = useQueryClient();
+  const { setSelectedDeviceId } = useAppStore();
 
-  const filtered = devices.filter((d) => {
-    if (statusFilter !== "all" && d.status !== statusFilter) return false;
-    if (search && !d.name.includes(search) && !d.product.includes(search)) return false;
-    return true;
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
+    queryKey: ["devices", { status: statusFilter === "all" ? undefined : statusFilter, keyword: search || undefined }],
+    queryFn: () =>
+      api.getDevices({
+        page: 1,
+        page_size: 50,
+        status: statusFilter === "all" ? undefined : statusFilter,
+        keyword: search || undefined,
+      }),
+    refetchInterval: 10_000,
   });
 
+  const { data: productsData } = useQuery({
+    queryKey: ["products"],
+    queryFn: () => api.getProducts(1, 100),
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: () => api.registerDevice(selectedProduct, deviceName.trim()),
+    onSuccess: (result) => {
+      setRegisteredSecret({ name: result.deviceName, secret: result.deviceSecret });
+      setDeviceName("");
+      setFormError("");
+      queryClient.invalidateQueries({ queryKey: ["devices"] });
+      queryClient.invalidateQueries({ queryKey: ["overview"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    },
+    onError: (e: Error) => setFormError(e instanceof ApiError ? e.message : e.message),
+  });
+
+  const devices: DeviceItem[] = data?.items ?? [];
+  const counts = data?.status_counts ?? {};
+  const totalCount = data?.total ?? 0;
+  const onlineCount = counts["online"] ?? 0;
+  const offlineCount = counts["offline"] ?? 0;
+  const inactiveCount = counts["not-activated"] ?? 0;
+
   const toggleAll = () => {
-    if (checked.size === filtered.length) setChecked(new Set());
-    else setChecked(new Set(filtered.map((d) => d.name)));
+    if (checked.size === devices.length) setChecked(new Set());
+    else setChecked(new Set(devices.map((d) => d.deviceId)));
   };
-  const toggleOne = (name: string) => {
+  const toggleOne = (id: string) => {
     setChecked((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
+
+  const inputCls =
+    "h-[32px] w-full text-[13px] border border-[#E5E6EB] rounded px-3 bg-white placeholder:text-[#BBBFC4] focus:outline-none focus:border-[#0052D9]";
 
   return (
     <div className="space-y-4">
@@ -101,7 +140,7 @@ export function DeviceListPage() {
               />
             </div>
             <div className="flex items-center gap-1">
-              {(["all", "online", "offline", "inactive"] as DeviceStatus[]).map((s) => {
+              {(["all", "online", "offline", "not-activated"] as DeviceStatus[]).map((s) => {
                 const cfg = statusConfig[s];
                 const isActive = statusFilter === s;
                 return (
@@ -122,10 +161,17 @@ export function DeviceListPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors">
-              <RefreshCw className="w-4 h-4 text-[#666]" />
+            <button
+              onClick={() => refetch()}
+              className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors"
+              title="刷新"
+            >
+              <RefreshCw className={"w-4 h-4 text-[#666] " + (isFetching ? "animate-spin" : "")} />
             </button>
-            <button className="flex items-center gap-1.5 bg-[#0052D9] text-white text-[13px] px-3 h-[32px] rounded hover:bg-[#0045B8] transition-colors">
+            <button
+              onClick={() => { setRegisterOpen(true); setFormError(""); setRegisteredSecret(null); }}
+              className="flex items-center gap-1.5 bg-[#0052D9] text-white text-[13px] px-3 h-[32px] rounded hover:bg-[#0045B8] transition-colors"
+            >
               <Plus className="w-3.5 h-3.5" /> 注册设备
             </button>
           </div>
@@ -138,10 +184,10 @@ export function DeviceListPage() {
               <tr>
                 <th style={{ width: "40px" }}>
                   <div
-                    className={"w-4 h-4 rounded border flex items-center justify-center cursor-pointer " + (checked.size === filtered.length ? "bg-[#0052D9] border-[#0052D9]" : "border-[#C9CDD4] bg-white")}
+                    className={"w-4 h-4 rounded border flex items-center justify-center cursor-pointer " + (checked.size === devices.length && devices.length > 0 ? "bg-[#0052D9] border-[#0052D9]" : "border-[#C9CDD4] bg-white")}
                     onClick={toggleAll}
                   >
-                    {checked.size === filtered.length && <Check className="w-3 h-3 text-white" />}
+                    {checked.size === devices.length && devices.length > 0 && <Check className="w-3 h-3 text-white" />}
                   </div>
                 </th>
                 <th>设备名称</th>
@@ -154,49 +200,169 @@ export function DeviceListPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((d) => {
-                const cfg = statusConfig[d.status];
-                return (
-                  <tr key={d.name}>
-                    <td>
-                      <div
-                        className={"w-4 h-4 rounded border flex items-center justify-center cursor-pointer " + (checked.has(d.name) ? "bg-[#0052D9] border-[#0052D9]" : "border-[#C9CDD4] bg-white")}
-                        onClick={() => toggleOne(d.name)}
-                      >
-                        {checked.has(d.name) && <Check className="w-3 h-3 text-white" />}
-                      </div>
-                    </td>
-                    <td className="text-[14px] font-medium text-[#333]">{d.name}</td>
-                    <td className="text-[13px] text-[#666]">{d.product}</td>
-                    <td>
-                      <span className={"tc-badge " + cfg.bg + " " + cfg.textColor}>
-                        <span className={"tc-status-dot " + cfg.dot} />
-                        {cfg.label}
-                      </span>
-                    </td>
-                    <td className="text-[13px] text-[#888]">{d.lastOnline}</td>
-                    <td className="text-[13px] text-[#666] font-mono">{d.firmware}</td>
-                    <td className="text-[13px] text-[#888]">{d.created}</td>
-                    <td>
-                      <button className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors">
-                        <MoreHorizontal className="w-4 h-4 text-[#999]" />
-                      </button>
-                    </td>
+              {isLoading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 8 }).map((_, j) => (
+                      <td key={j}><div className="h-4 bg-[#F3F4F6] rounded animate-pulse w-4/5" /></td>
+                    ))}
                   </tr>
-                );
-              })}
+                ))
+              ) : isError ? (
+                <tr>
+                  <td colSpan={8}>
+                    <div className="py-10 text-center">
+                      <div className="text-[13px] text-[#E34D59] mb-2">数据加载失败: {(error as Error)?.message}</div>
+                      <button onClick={() => refetch()} className="text-[13px] text-[#0052D9] hover:underline">重新加载</button>
+                    </div>
+                  </td>
+                </tr>
+              ) : devices.length === 0 ? (
+                <tr>
+                  <td colSpan={8}>
+                    <div className="py-12 text-center text-[13px] text-[#BBBFC4]">
+                      {search || statusFilter !== "all" ? "未找到匹配的设备" : "暂无设备, 点击右上角「注册设备」添加"}
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                devices.map((d) => {
+                  const cfg = statusConfig[d.status] ?? statusConfig.offline;
+                  return (
+                    <tr key={d.deviceId} className="cursor-pointer" onClick={() => setSelectedDeviceId(d.deviceId)}>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div
+                          className={"w-4 h-4 rounded border flex items-center justify-center cursor-pointer " + (checked.has(d.deviceId) ? "bg-[#0052D9] border-[#0052D9]" : "border-[#C9CDD4] bg-white")}
+                          onClick={() => toggleOne(d.deviceId)}
+                        >
+                          {checked.has(d.deviceId) && <Check className="w-3 h-3 text-white" />}
+                        </div>
+                      </td>
+                      <td className="text-[14px] font-medium text-[#333]">{d.deviceName}</td>
+                      <td className="text-[13px] text-[#666]">{d.productName}</td>
+                      <td>
+                        <span className={"tc-badge " + cfg.bg + " " + cfg.textColor}>
+                          <span className={"tc-status-dot " + cfg.dot} />
+                          {cfg.label}
+                        </span>
+                      </td>
+                      <td className="text-[13px] text-[#888]">{formatDateTime(d.lastLoginAt)}</td>
+                      <td className="text-[13px] text-[#666] font-mono">{d.firmwareVersion || "—"}</td>
+                      <td className="text-[13px] text-[#888]">{formatDateTime(d.createdAt).split(" ")[0]}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <button
+                          className="p-1.5 rounded hover:bg-[#F3F4F6] transition-colors"
+                          onClick={() => setSelectedDeviceId(d.deviceId)}
+                          title="查看详情"
+                        >
+                          <MoreHorizontal className="w-4 h-4 text-[#999]" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Pagination */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-[#E5E6EB]">
-          <span className="text-[12px] text-[#999]">共 {filtered.length} 条记录</span>
+          <span className="text-[12px] text-[#999]">共 {totalCount} 条记录</span>
           <div className="flex items-center gap-1">
             <button className="w-8 h-8 flex items-center justify-center rounded text-[13px] bg-[#0052D9] text-white">1</button>
           </div>
         </div>
       </div>
+
+      {/* Register Device Dialog */}
+      {registerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setRegisterOpen(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl w-[480px]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E6EB]">
+              <h3 className="text-[16px] font-semibold text-[#333]">注册设备</h3>
+              <button onClick={() => setRegisterOpen(false)} className="p-1 rounded hover:bg-[#F3F4F6]">
+                <X className="w-4 h-4 text-[#999]" />
+              </button>
+            </div>
+
+            {registeredSecret ? (
+              <div className="px-6 py-5">
+                <div className="text-[13px] text-[#2BA471] bg-[#E8F8F0] rounded px-3 py-2 mb-4">
+                  ✓ 设备「{registeredSecret.name}」注册成功! 设备密钥仅展示一次, 请妥善保管:
+                </div>
+                <div className="bg-[#F7F8FA] rounded p-3 font-mono text-[12px] text-[#333] break-all border border-[#E5E6EB]">
+                  {registeredSecret.secret}
+                </div>
+                <div className="flex justify-end mt-5">
+                  <button
+                    onClick={() => setRegisterOpen(false)}
+                    className="px-4 h-[32px] text-[13px] bg-[#0052D9] text-white rounded hover:bg-[#0045B8]"
+                  >
+                    完成
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="px-6 py-5 space-y-4">
+                  <div>
+                    <label className="block text-[13px] text-[#666] mb-1.5">
+                      所属产品 <span className="text-[#E34D59]">*</span>
+                    </label>
+                    <select
+                      value={selectedProduct}
+                      onChange={(e) => setSelectedProduct(e.target.value)}
+                      className={inputCls}
+                    >
+                      <option value="">请选择产品</option>
+                      {(productsData?.items ?? []).map((p) => (
+                        <option key={p.productId} value={p.productId}>
+                          {p.productName} ({p.productId})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[13px] text-[#666] mb-1.5">
+                      设备名称 <span className="text-[#E34D59]">*</span>
+                    </label>
+                    <input
+                      value={deviceName}
+                      onChange={(e) => setDeviceName(e.target.value)}
+                      placeholder="仅字母/数字/中划线/下划线, 如: thermo-05"
+                      className={inputCls + " font-mono"}
+                    />
+                  </div>
+                  {formError && (
+                    <div className="text-[12px] text-[#E34D59] bg-[#FDECEE] rounded px-3 py-2">{formError}</div>
+                  )}
+                </div>
+                <div className="flex justify-end gap-2 px-6 py-4 border-t border-[#E5E6EB]">
+                  <button
+                    onClick={() => setRegisterOpen(false)}
+                    className="px-4 h-[32px] text-[13px] border border-[#E5E6EB] rounded text-[#666] hover:border-[#0052D9] hover:text-[#0052D9]"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!selectedProduct) { setFormError("请选择所属产品"); return; }
+                      if (!deviceName.trim()) { setFormError("设备名称不能为空"); return; }
+                      registerMutation.mutate();
+                    }}
+                    disabled={registerMutation.isPending}
+                    className="px-4 h-[32px] text-[13px] bg-[#0052D9] text-white rounded hover:bg-[#0045B8] disabled:opacity-60"
+                  >
+                    {registerMutation.isPending ? "注册中..." : "确定"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

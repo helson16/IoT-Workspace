@@ -103,8 +103,27 @@ export class ProductService {
       this.prisma.product.count({ where }),
     ]);
 
+    // 附加设备统计(总数/在线数)
+    const productIds = products.map((p: any) => p.productId);
+    const deviceGroups = await this.prisma.device.groupBy({
+      by: ['productId', 'status'],
+      where: { productId: { in: productIds } },
+      _count: { _all: true },
+    });
+    const statsMap = new Map<string, { total: number; online: number }>();
+    for (const g of deviceGroups) {
+      const s = statsMap.get(g.productId) ?? { total: 0, online: 0 };
+      s.total += g._count._all;
+      if (g.status === 'online') s.online = g._count._all;
+      statsMap.set(g.productId, s);
+    }
+
     return {
-      items: products.map(mapProductToBasic),
+      items: products.map((p: any) => ({
+        ...mapProductToBasic(p),
+        deviceCount: statsMap.get(p.productId)?.total ?? 0,
+        onlineCount: statsMap.get(p.productId)?.online ?? 0,
+      })),
       total,
     };
   }
