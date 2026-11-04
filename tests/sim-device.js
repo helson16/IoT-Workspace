@@ -18,14 +18,19 @@
  *     幂等自注册"智能摄像头"产品与设备, 周期上报 AV 事件元数据(无真实视频流)
  *
  * 用法: node tests/sim-device.js [设备名...]   (缺省 = 温控器 + 两个摄像头)
- * 环境变量: SIM_MODE(mqtt|http, 默认 mqtt) MQTT_URL(默认 mqtt://localhost:1883)
+ * 环境变量: SIM_MODE(mqtt|http, 默认 mqtt) MQTT_URL(默认 mqtts://localhost:8883, 明文回退 mqtt://localhost:1883)
+ *           SERVER_ROOT_CA(默认 backend/.certs/ca.pem)
  *           API_BASE(默认 http://localhost:3200) INTERNAL_SECRET(默认 dev-internal-secret)
  */
 
 import mqtt from 'mqtt';
+import fs from 'node:fs';
 
 const SIM_MODE = (process.env.SIM_MODE || 'mqtt').toLowerCase();
-const MQTT_URL = process.env.MQTT_URL || 'mqtt://localhost:1883';
+// 默认走 EMQX TLS 监听(mqtts @8883, CA=backend/.certs/ca.pem); 明文回退: MQTT_URL=mqtt://localhost:1883
+const MQTT_URL = process.env.MQTT_URL || 'mqtts://localhost:8883';
+const SERVER_ROOT_CA = process.env.SERVER_ROOT_CA
+  || new URL('../backend/.certs/ca.pem', import.meta.url).pathname;
 const SDK_APP_ID = process.env.MQTT_SDK_APP_ID || '12010126';
 const API_BASE = process.env.API_BASE || 'http://localhost:3200';
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'dev-internal-secret';
@@ -147,6 +152,10 @@ class SimDevice {
     const clientId = `${this.productId}${this.deviceName};${SDK_APP_ID};${this.productId};${Math.floor(Date.now() / 1000) + 86400}`;
 
     await new Promise((resolve, reject) => {
+      // mqtts: 信任自签 CA(单向 TLS); mqtt: 明文直连(开发回退)
+      const tlsOpts = MQTT_URL.startsWith('mqtts')
+        ? { ca: fs.readFileSync(SERVER_ROOT_CA), rejectUnauthorized: true }
+        : {};
       const client = mqtt.connect(MQTT_URL, {
         clientId,
         username,
@@ -154,6 +163,7 @@ class SimDevice {
         keepalive: 30,
         clean: true,
         reconnectPeriod: 5000, // 断线自动重连(auth hook 重新鉴权)
+        ...tlsOpts,
       });
       const timer = setTimeout(() => {
         reject(new Error(`MQTT 连接超时(${MQTT_URL}), 请确认 EMQX 已启动`));

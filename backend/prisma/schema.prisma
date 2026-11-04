@@ -247,7 +247,7 @@ model ForwardRule {
   messageType  String   @map("message_type") @db.VarChar(16) // property | event
   filter       Json     @default("{}") // { identifiers?: string[], eventTypes?: string[] }
   targetType   String   @map("target_type") @db.VarChar(16) // http | republish
-  targetConfig Json     @default("{}") @map("target_config") // http:{url} | republish:{topic}
+  targetConfig Json     @default("{}") @map("target_config") // http:{url} | republish:{topic, 支持{productId}/{deviceName}占位符, 禁+/#通配}
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

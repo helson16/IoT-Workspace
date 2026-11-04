@@ -270,6 +270,127 @@ async function ensureApiKey(): Promise<void> {
   console.log(`    EMQX_API_SECRET=${(created as any).api_secret}`);
 }
 
+// ---------------- 5. ACL authorization source(HTTP authorizer) ----------------
+// EMQX authorization 链: [http authorizer(本平台设备 topic 判定)] → [file 兜底(dashboard/本机)]
+// 后端端点任何情况返 200 + {"result":"allow"|"deny"|"ignore"}; ignore = 交回链下一 source。
+// 注意 5.8 坑: PUT /authorization/sources/http 的 body 必须含 type(与 connector/action PUT 相反)。
+
+async function ensureAcl(): Promise<void> {
+  const { json: sourcesJson } = await emqxApi('GET', '/authorization/sources');
+  const sources: any[] = (sourcesJson as any)?.sources ?? [];
+  console.log('ℹ 当前 authorization sources(回滚参照, 请留存本输出):');
+  console.log(`  ${JSON.stringify(sources.map((s: any) => s.type))}`);
+
+  const aclBody = {
+    type: 'http',
+    method: 'post',
+    enable: true,
+    url: `${BACKEND_BASE}/api/internal/mqtt/acl`,
+    headers: {
+      'content-type': 'application/json',
+      'x-internal-secret': INTERNAL_SECRET,
+    },
+    body: {
+      username: '${username}',
+      topic: '${topic}',
+      action: '${action}',
+      clientid: '${clientid}',
+    },
+    request_timeout: '5s',
+  };
+
+  const existing = sources.find((s: any) => s.type === 'http');
+  if (existing) {
+    await emqxApi('PUT', '/authorization/sources/http', aclBody);
+    console.log('✓ ACL authorizer 已存在, 更新: http → /api/internal/mqtt/acl');
+  } else {
+    await emqxApi('POST', '/authorization/sources', aclBody);
+    console.log('✓ ACL authorizer 已创建: http → /api/internal/mqtt/acl');
+  }
+
+  // 链顺序: http 优先(设备), file 兜底(dashboard/内部客户端)
+  const desiredOrder = JSON.stringify([{ type: 'http' }, { type: 'file' }]);
+  const { json: orderJson } = await emqxApi('PUT', '/authorization/sources/order', [
+    { type: 'http' },
+    { type: 'file' },
+  ]);
+  console.log(`✓ authorization 链顺序已设置: ${desiredOrder}(实际响应: ${JSON.stringify(orderJson).slice(0, 120)})`);
+
+  // 自检: 重读确认
+  const { json: after } = await emqxApi('GET', '/authorization/sources');
+  const afterTypes = ((after as any)?.sources ?? []).map((s: any) => s.type);
+  console.log(`ℹ 自检 sources: ${JSON.stringify(afterTypes)}`);
+  if (!afterTypes.includes('http')) throw new Error('自检失败: http authorizer 未生效');
+}
+
+async function rollbackAcl(): Promise<void> {
+  const { json } = await emqxApi('DELETE', '/authorization/sources/http');
+  console.log(`✓ http authorizer 已删除: ${JSON.stringify(json).slice(0, 120)}`);
+  await emqxApi('PUT', '/authorization/sources/order', [{ type: 'file' }]);
+  console.log('✓ authorization 链顺序已回滚为 [file]');
+}
+
+// ---------------- 6. TLS(自签证书 + ssl:default listener) ----------------
+// 单向 TLS: 服务端证书自签(CA=localhost/127.0.0.1), verify 维持 verify_none(不做 mTLS)。
+// 证书落 backend/.certs/(gitignore 已覆盖 *.pem/*.key); listener 热更新, 改前打印原配置备援。
+
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const CERT_DIR = fileURLToPath(new URL('../.certs/', import.meta.url));
+
+function ensureCerts(): void {
+  const caPem = path.join(CERT_DIR, 'ca.pem');
+  const serverPem = path.join(CERT_DIR, 'server.pem');
+  if (existsSync(caPem) && existsSync(serverPem)) {
+    console.log(`✓ 自签证书已存在: ${CERT_DIR}{ca.pem, server.pem}`);
+    return;
+  }
+  mkdirSync(CERT_DIR, { recursive: true });
+  const caKey = path.join(CERT_DIR, 'ca.key');
+  const serverKey = path.join(CERT_DIR, 'server.key');
+  const csr = path.join(CERT_DIR, 'server.csr');
+  const ext = path.join(CERT_DIR, 'san.ext');
+  writeFileSync(ext, 'subjectAltName=DNS:localhost,IP:127.0.0.1\n');
+
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+    '-keyout', caKey, '-out', caPem, '-days', '3650', '-subj', '/CN=IoT Dev CA']);
+  execFileSync('openssl', ['req', '-newkey', 'rsa:2048', '-nodes',
+    '-keyout', serverKey, '-out', csr, '-subj', '/CN=localhost']);
+  execFileSync('openssl', ['x509', '-req', '-in', csr,
+    '-CA', caPem, '-CAkey', caKey, '-CAcreateserial', '-out', serverPem,
+    '-days', '825', '-extfile', ext]);
+  console.log(`✓ 自签证书已生成: ${CERT_DIR}{ca.pem, server.pem}(SAN: localhost/127.0.0.1)`);
+}
+
+async function ensureTlsListener(): Promise<void> {
+  ensureCerts();
+
+  const listenerId = 'ssl:default';
+  const { json: current } = await emqxApi('GET', `/listeners/${encodeURIComponent(listenerId)}`);
+  console.log('ℹ 当前 ssl_options(回滚参照, 请留存本输出):');
+  console.log(`  ${JSON.stringify((current as any)?.ssl_options)}`);
+
+  const body = {
+    id: listenerId,
+    type: 'ssl',
+    bind: '0.0.0.0:8883',
+    enable: true,
+    ssl_options: {
+      cacertfile: path.join(CERT_DIR, 'ca.pem'),
+      certfile: path.join(CERT_DIR, 'server.pem'),
+      keyfile: path.join(CERT_DIR, 'server.key'),
+      verify: 'verify_none', // 单向 TLS, 不做 mTLS
+      fail_if_no_peer_cert: false,
+      versions: ['tlsv1.3', 'tlsv1.2'],
+    },
+  };
+  await emqxApi('PUT', `/listeners/${encodeURIComponent(listenerId)}`, body);
+  console.log(`✓ TLS listener 已更新: ${listenerId} @ 0.0.0.0:8883(证书: ${CERT_DIR})`);
+}
+
 // ---------------- main ----------------
 
 async function main(): Promise<void> {
@@ -284,14 +405,24 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (process.argv.includes('--rollback-acl')) {
+    await rollbackAcl();
+    console.log('\nACL 已回滚(file 兜底恢复全放行)。建议重跑本脚本(不带参数)重新配置。');
+    return;
+  }
+
   await ensureAuthn();
   await ensureConnector();
   await ensureActionsAndRules();
   await ensureApiKey();
+  await ensureAcl();
+  await ensureTlsListener();
 
   console.log('\n全部配置完成。校验:');
   console.log('  - EMQX Dashboard (http://localhost:18083) → Access Control / Integration 查看上述条目');
   console.log('  - backend/.env 填入 EMQX_API_KEY / EMQX_API_SECRET 后重启后端, 下行推送即生效');
+  console.log('  - ACL: 设备仅能 pub/sub 自己的 topic(负向验证前先 DELETE /api/v5/authorization/cache)');
+  console.log('  - TLS: 设备用 mqtts://localhost:8883 + backend/.certs/ca.pem 连接');
 }
 
 main().catch((err: Error) => {
