@@ -276,7 +276,7 @@ Work Log:
 - 范围: 只做后端端点, 不接前端、不改 shadow 路由(第 1 步范围)
 
 Stage Summary:
-- 质量门: backend tsc 0 / 178 单测通过(新增 command-parse.test.ts 79 条, 共 6 文件); lint 本轮未跑
+- 质量门: backend tsc 0 / 178 单测通过(新增 command-parse.test.ts 79 条, 共 6 文件) / lint 0 error(109 warning 全部落在既有文件, 新增的 service 与 routes 零 warning)
 - 交付: POST /api/v1/devices/:deviceId/command:parse(只解析不写影子) + 6 篇设计/用例/实测文档(.ai-docs/designs/typesafe/)
 - 核心结论: 模型只做语义判断、对错交给 code 的确定性校验; 三条阈值都不是安全边界只是分流器, 安全来自「候选集组装 + validateValue + 抽不到数值就澄清」三层
 - 教训: ① SDK 把 answers 声明成 total mapped type, 编译期承诺「每个问题都有答案」是虚假保证 —— 网络返回值该兜底还得兜底(少一个答案就是 TypeError → 500), 兜底方向统一取「多澄清」; ② 被 confidence 偶然拦下的用例不算安全, 要问「拦下它的理由」与「风险」是否同源, 同源就补结构性规则; ③ 单测绿 ≠ 真实数据已验证 — F-3 单测过了但实跑根本没触发(设备命名对不上)
