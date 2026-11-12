@@ -28,6 +28,22 @@ if (!_jwtSecret) {
   );
 }
 
+const _nodeEnvEarly = process.env['NODE_ENV'] ?? 'development';
+// 平台应用凭证: production 必须显式配置; dev 未配置时给公开示例值并告警
+// (该示例值仅用于本地开发, 一旦泄露需双端同步轮换)
+if (!_appKey || !_appSecret) {
+  if (_nodeEnvEarly === 'production') {
+    throw new Error(
+      'APP_KEY/APP_SECRET environment variables are required in production.',
+    );
+  }
+  console.warn(
+    '[config] APP_KEY/APP_SECRET 未配置, 回退到公开开发默认值 — 生产环境禁止使用',
+  );
+}
+const _appKeyFinal = _appKey || 'iot-explorer-app-key';
+const _appSecretFinal = _appSecret || 'REDACTED-LEAKED-APP-SECRET';
+
 export const config = {
   port: parseInt(_port, 10) || 3200,
   host: _host,
@@ -38,8 +54,8 @@ export const config = {
   jwtSecret: _jwtSecret,
   jwtExpiresIn: _jwtExpiresIn,
   deviceTokenExpiresIn: _deviceTokenExpiresIn,
-  appKey: _appKey,
-  appSecret: _appSecret,
+  appKey: _appKeyFinal,
+  appSecret: _appSecretFinal,
   mqttBrokerHost: _mqttBrokerHost,
   mqttBrokerPort: parseInt(_mqttBrokerPort, 10) || 8883,
   mqttBrokerSsl: _mqttBrokerSsl === 'true' || _mqttBrokerSsl === '1',

@@ -34,6 +34,22 @@ function createPrismaMock(rows: ShadowRow[]) {
         store.set(where.deviceId, updated);
         return structuredClone(updated);
       }),
+      // 模拟真实 DB 的 CAS 语义: where 带版本条件, 不匹配时 count=0
+      updateMany: vi.fn(async ({ where, data }: { where: { deviceId: string; desiredVersion?: number }; data: object }) => {
+        const row = store.get(where.deviceId);
+        if (!row) return { count: 0 };
+        if (where.desiredVersion !== undefined && row.desiredVersion !== where.desiredVersion) {
+          return { count: 0 };
+        }
+        const updated = { ...row, ...data } as ShadowRow;
+        store.set(where.deviceId, updated);
+        return { count: 1 };
+      }),
+      findUniqueOrThrow: vi.fn(async ({ where }: { where: { deviceId: string } }) => {
+        const row = store.get(where.deviceId);
+        if (!row) throw new Error(`row not found: ${where.deviceId}`);
+        return structuredClone(row);
+      }),
     },
   };
   return { prisma, store };
@@ -131,6 +147,32 @@ describe('ShadowService.updateDesired', () => {
     await expect(service.updateDesired('dev-001', { target: 26 }, 99)).rejects.toThrow(
       ShadowVersionConflictError,
     );
+  });
+
+  it('TOCTOU 回归: 预检查后版本被并发修改, CAS 拒绝写入且不覆盖', async () => {
+    const { service, prisma, store } = makeService([structuredClone(baseRow)]);
+
+    // 模拟并发场景: findUnique 返回过期的 desiredVersion=0 快照(预检查通过),
+    // 但 store 中已被另一笔请求改为 desiredVersion=1 —— 旧实现会直接覆盖写入,
+    // CAS 实现必须以 count=0 拒绝。
+    const originalFindUnique = prisma.findUnique;
+    prisma.findUnique = vi.fn(async ({ where }: { where: { deviceId: string } }) => {
+      const row = store.get(where.deviceId);
+      if (!row) return null;
+      const stale = structuredClone(row);
+      if (where.deviceId === 'dev-001') stale.desiredVersion = 0;
+      return stale;
+    }) as typeof originalFindUnique;
+
+    // store 真实状态已推进到 1
+    store.get('dev-001')!.desiredVersion = 1;
+
+    await expect(service.updateDesired('dev-001', { target: 26 }, 0)).rejects.toThrow(
+      ShadowVersionConflictError,
+    );
+    // store 未被写入覆盖
+    expect(store.get('dev-001')?.desired).toEqual({});
+    expect(store.get('dev-001')?.desiredVersion).toBe(1);
   });
 
   it('设备不存在抛出 DeviceNotFoundError', async () => {

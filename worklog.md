@@ -768,3 +768,27 @@ Stage Summary:
 - EMQX 接入从「连得上」升级为「管得住+加密传」: 设备级 ACL 上行 4 topic/下行 3 前缀精确授权, 非设备客户端经 file 兜底放行(dashboard 等), 8883 mqtts 默认通道+1883 明文开发回退
 - rule-engine republish 从模拟改为 EMQX 管理 API 真实发布, 信封格式与 http 转发对齐, E2E 实收验证
 - 配置全脚本化幂等(ensureAcl/ensureCerts/ensureTlsListener), rollback-acl 一键回退 ACL; 计划内未做(后续按需): mTLS/EMQX 集群监控/action 下行调用链路
+
+---
+Task ID: 25
+Agent: Main Agent
+Task: 安全审计修复落地 — P0 设备 JWT 越权 + 前端凭证出包, P1 SSRF/配置炸弹, P2 门控/乐观锁/git 卫生
+
+Work Log:
+- 前置: 全量安全审计(前一会话完成, 10 项发现), 用户批准按 P0→P2 修复; 21 处 $queryRaw 已确认全参数化、TYPESAFE_API_KEY 仅后端、token 不落 localStorage 等审计为安全项不动
+- P0-1 设备 JWT 越权(HIGH): 设备 token 与平台 token 同 jwtSecret 签发且全局 hook 只验签名不校验 scope, 设备 token 可读任意设备凭证明文+轮换; 修复: JwtDevicePayload 加 scope:'device', app.ts hook 提取 shared/token-scope.ts isPlatformToken 纯函数, /api/v1/* 非 platform scope 一律 403(fail-closed); 确认无合法调用方使用设备 token 调平台 API(模拟器/mock-device 均走 platform-token)
+- P0-2 app_secret 出包(HIGH): client.ts 的 NEXT_PUBLIC_APP_KEY/SECRET + fallback 字面值随公开仓库泄露; 修复: 新建 Next.js 服务端代理 /api/platform-token(APP_KEY/APP_SECRET 无 NEXT_PUBLIC_ 前缀仅服务端可见, no-store), client.ts 改走同源代理删全部字面量; .env.local 移除 NEXT_PUBLIC_APP_*; backend config 加启动校验(production throw / dev 默认值+warn); secret 值轮换需双端同步, 已在审计报告说明暂不做
+- P1-3 SSRF(HIGH): 规则引擎 HTTP 转发 target_config.url 用户可控无内网黑名单; 修复: shared/ssrf-guard.ts(isPrivateHost 字面量判定 127/8、10/8、172.16/12、192.168/16、169.254/16、0/8、100.64/10、CGNAT、::1、::、IPv4-mapped、fc00::/7、fe80::/10 + validateForwardUrl 协议/凭据/DNS 解析后全 IP 校验 fail-closed); rule.routes 创建/更新前置校验(ValidationError), executeTarget 转发执行时二次校验(urlGuard 可注入)
+- P1-4 配置炸弹(MEDIUM): 删 Caddyfile(81 端口无监听, .zscripts 条件引用不受影响); docker-compose 三处硬编码凭证(REDACTED-LEAKED-INTERNAL-SECRET/admin 弱口令/postgres)改 ${VAR:?required} fail-fast 注入
+- P2-5(MEDIUM): /api/internal/echo 无 secret 无门控 → 改为非 production 才注册(production 404); shadow updateDesired 乐观锁 TOCTOU → updateMany where 带 desiredVersion 原子 CAS, count=0 抛 ShadowVersionConflictError, 保留预检查快速失败
+- P2-6(LOW): 根 .env 被 git 跟踪(仅旧 sqlite 残留无密钥) → git rm --cached + 删除文件, .gitignore .env* 对未跟踪新文件生效
+- 单测: 新增 token-scope.test.ts 4 + ssrf-guard.test.ts 16 + rule-engine SSRF 2 + shadow TOCTOU 回归 1; rule-engine 夹具 URL 改 203.0.113.10(TEST-NET-3 字面量)免 DNS 依赖; shadow mock 补 updateMany CAS 语义 + findUniqueOrThrow
+- 质量门: backend tsc 0 error / 318 passed(基线 302 + 净增 16) / lint 0 error 130 warning(基线+1); root tsc 0 error / lint 0 error 0 warning
+- E2E 全 PASS: ①设备 token scope=device, 调 /api/v1/devices 与凭据端点均 403(原 HIGH 风险路径关闭); ②前端代理链路 curl+浏览器双验证——设备列表/统计正常渲染, 无 /api/v1/auth/platform-token 调用; ③模拟器 3 设备 mqtts 在线(EMQX authn 回调正常), 近 2min 48 条上报落库; ④影子 CAS——stale version 409 + 正确 version 200 递增, 测后探针字段清理; ⑤echo 端点 dev 仍 200(演示联调不受影响)
+- 会话插曲: 背景进程跨会话丢失(dev 3200/3000 + 模拟器全部重启); 测试一处共享 spy 未清零导致断言失败, beforeEach mockClear 修复
+
+Stage Summary:
+- 审计 10 项发现全部修复: 两个 HIGH 越权/泄露面关闭, SSRF 双时点校验, 配置文件无硬编码凭证, 内部端点环境门控, 影子并发安全升级为原子 CAS
+- 凭证治理: APP_KEY/APP_SECRET 退出浏览器 bundle, 进程凭证统一收敛到服务端 env + 启动校验; 待办: secret 值实际轮换(需双端同步, 用户决策)
+- 质量基线推进: 302→318 tests, lint 仍 0 error; 修复全程可回归(E2E 脚本验证链路完整)
+

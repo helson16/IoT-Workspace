@@ -341,6 +341,8 @@ export class DeviceService {
       deviceId: device.deviceId,
       productId: device.productId,
       deviceName: device.deviceName,
+      // 设备 token 与平台 token 用同一密钥签发, 必须以 scope 区分权限边界
+      scope: 'device',
     };
 
     const expiresInSeconds = Math.floor(Number(ms(config.deviceTokenExpiresIn as any)) / 1000);

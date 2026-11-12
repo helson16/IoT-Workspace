@@ -1,4 +1,5 @@
 import type { PrismaClient, Prisma } from '@prisma/client';
+import { validateForwardUrl, type UrlGuardResult } from '../shared/ssrf-guard.js';
 
 /**
  * 规则引擎 — 设备上行消息转发
@@ -36,6 +37,8 @@ export interface TargetResult {
 export type FetchImpl = (url: string, init: RequestInit) => Promise<Response>;
 /** MQTT 重发布实现(EmqxBridgeService.publish 注入) */
 export type PublishImpl = (topic: string, payload: object) => Promise<boolean>;
+/** SSRF 校验实现(默认真实 DNS 解析, 单测可注入桩) */
+export type UrlGuard = (url: string) => Promise<UrlGuardResult>;
 
 const HTTP_TIMEOUT_MS = 5_000;
 
@@ -98,6 +101,7 @@ export async function executeTarget(
   msg: UpstreamMessage,
   fetchImpl: FetchImpl = fetch,
   publishImpl?: PublishImpl,
+  urlGuard: UrlGuard = validateForwardUrl,
 ): Promise<TargetResult> {
   const started = Date.now();
   const config = (rule.targetConfig ?? {}) as { url?: unknown; topic?: unknown };
@@ -106,6 +110,15 @@ export async function executeTarget(
     const url = typeof config.url === 'string' ? config.url : '';
     if (!url) {
       return { result: 'failed', errorMsg: '规则未配置转发 URL', latencyMs: 0 };
+    }
+    // SSRF 防护: URL 由用户配置, 转发执行前二次校验(规则入库早于校验逻辑的历史数据兜底)
+    const guard = await urlGuard(url);
+    if (!guard.ok) {
+      return {
+        result: 'failed',
+        errorMsg: `转发目标被拒绝: ${guard.reason}`,
+        latencyMs: Date.now() - started,
+      };
     }
     try {
       const controller = new AbortController();

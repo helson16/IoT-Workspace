@@ -1,13 +1,12 @@
 /**
  * Fastify 后端 API 客户端
  *
- * - 自动附加平台 Bearer Token(通过 /api/v1/auth/platform-token 获取, 内存缓存 + 401 自动刷新重试)
+ * - 自动附加平台 Bearer Token(经 Next.js 服务端代理 /api/platform-token 获取,
+ *   APP_KEY/APP_SECRET 只存在于服务端环境变量, 不进浏览器 bundle; 内存缓存 + 401 自动刷新重试)
  * - 统一解包 { code, message, data } 响应格式, 非 0 code 抛 ApiError
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:3200";
-const APP_KEY = process.env.NEXT_PUBLIC_APP_KEY || "iot-explorer-app-key";
-const APP_SECRET = process.env.NEXT_PUBLIC_APP_SECRET || "REDACTED-LEAKED-APP-SECRET";
 
 export class ApiError extends Error {
   code: number;
@@ -39,11 +38,8 @@ async function requestPlatformToken(): Promise<string> {
   if (tokenRequest) return tokenRequest;
 
   tokenRequest = (async () => {
-    const res = await fetch(`${API_BASE}/api/v1/auth/platform-token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ app_key: APP_KEY, app_secret: APP_SECRET }),
-    });
+    // 走同源 Next.js 服务端代理: 凭证留在服务端, 浏览器只拿短期 token
+    const res = await fetch(`/api/platform-token`, { method: "POST" });
     const json = (await res.json()) as ApiEnvelope<{
       access_token: string;
       expires_in: number;

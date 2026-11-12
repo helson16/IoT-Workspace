@@ -159,14 +159,37 @@ export class ShadowService {
     const delta = this.computeDelta(mergedDesired, currentReported);
     const newDesiredVersion = shadow.desiredVersion + 1;
 
-    const updated = await this.prisma.deviceShadow.update({
-      where: { deviceId },
+    // 原子 CAS: where 带上 desiredVersion 条件, 消除上面预检查(updateDesired
+    // 预读 → 校验)与写入之间的 TOCTOU 窗口 —— 并发下发时只有恰好基于最新
+    // desiredVersion 的一笔写入成功, 其余按版本冲突拒绝。
+    const cas = await this.prisma.deviceShadow.updateMany({
+      where: { deviceId, desiredVersion: expectedVersion },
       data: {
-        desired: mergedDesired,
+        desired: mergedDesired as any,
         desiredVersion: newDesiredVersion,
         lastDesiredAt: new Date(),
         metadata: newMetadata as any,
       },
+    });
+    if (cas.count === 0) {
+      // 走到这里说明预检查与写入之间 desiredVersion 被并发修改
+      const latest = await this.prisma.deviceShadow.findUnique({
+        where: { deviceId },
+        select: { desiredVersion: true },
+      });
+      throw new ShadowVersionConflictError(
+        `Desired version conflict: expected ${expectedVersion}, actual ${latest?.desiredVersion}`,
+        [
+          {
+            field: 'version',
+            message: `Current desired version is ${latest?.desiredVersion}`,
+          },
+        ],
+      );
+    }
+
+    const updated = await this.prisma.deviceShadow.findUniqueOrThrow({
+      where: { deviceId },
     });
 
     const version = Math.max(newDesiredVersion, updated.reportedVersion);

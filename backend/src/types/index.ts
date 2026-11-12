@@ -156,6 +156,8 @@ export interface JwtDevicePayload {
   deviceId: string;
   productId: string;
   deviceName: string;
+  /** 设备 token 仅限设备侧链路使用, 不得访问平台 API(/api/v1/*) */
+  scope: 'device';
 }
 
 export interface JwtPlatformPayload {

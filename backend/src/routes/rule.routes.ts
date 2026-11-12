@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { ForwardRuleService } from '../services/forward-rule.service.js';
 import { success, successCreated } from '../shared/response.js';
+import { validateForwardUrl } from '../shared/ssrf-guard.js';
+import { ValidationError } from '../shared/errors.js';
 
 const NAME_PATTERN = '^[^\\s].{0,63}$'; // 非空白开头, ≤64 字符
 
@@ -59,6 +61,17 @@ export default async function ruleRoutes(fastify: FastifyInstance) {
     status: body.status,
   });
 
+  /** 规则保存前校验 HTTP 转发目标(SSRF 防护, 创建/更新共用) */
+  const assertForwardUrlSafe = async (body: RuleBody): Promise<void> => {
+    if (body.target_type !== 'http' || !body.target_config?.url) return;
+    const guard = await validateForwardUrl(body.target_config.url);
+    if (!guard.ok) {
+      throw new ValidationError(guard.reason, [
+        { field: 'target_config.url', message: guard.reason },
+      ]);
+    }
+  };
+
   // GET /api/v1/forward-rules - 规则列表(含今日转发统计)
   fastify.get('/api/v1/forward-rules', async (_request, reply) => {
     const rules = await service.list();
@@ -70,6 +83,7 @@ export default async function ruleRoutes(fastify: FastifyInstance) {
   fastify.post('/api/v1/forward-rules', {
     schema: { body: ruleBodySchema },
   }, async (request, reply) => {
+    await assertForwardUrlSafe(request.body as RuleBody);
     const rule = await service.create(toServiceInput(request.body as RuleBody));
     const resp = successCreated(rule);
     reply.code(resp.statusCode).send(resp.body);
@@ -87,6 +101,7 @@ export default async function ruleRoutes(fastify: FastifyInstance) {
     },
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    await assertForwardUrlSafe(request.body as RuleBody);
     const rule = await service.update(id, toServiceInput(request.body as RuleBody));
     const resp = success(rule);
     reply.code(resp.statusCode).send(resp.body);

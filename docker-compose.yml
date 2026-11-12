@@ -9,9 +9,10 @@ services:
     container_name: iot-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: iot_explorer
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # 敏感凭证必须经环境变量注入, :?required 保证未配置时启动即失败(fail-fast)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-iot_explorer}
     ports:
       - "5432:5432"
     volumes:
@@ -52,20 +53,21 @@ services:
       - "18083:18083"     # Dashboard
     environment:
       # EMQX 认证 — HTTP Backend 指向后端 Fastify
+      # INTERNAL_SECRET 必须与 backend/.env 保持一致, 经环境变量注入(勿提交明文)
       EMQX_AUTHENTICATION__1__MECHANISM: "password_based"
       EMQX_AUTHENTICATION__1__BACKEND: "http"
       EMQX_AUTHENTICATION__1__ENABLE: "true"
       EMQX_AUTHENTICATION__1__HTTP__URL: "http://host.docker.internal:3200/api/internal/mqtt/auth"
       EMQX_AUTHENTICATION__1__HTTP__METHOD: "post"
       EMQX_AUTHENTICATION__1__HTTP__HEADERS: >-
-        {"Content-Type":"application/json","X-Internal-Secret":"REDACTED-LEAKED-INTERNAL-SECRET"}
+        {"Content-Type":"application/json","X-Internal-Secret":"${INTERNAL_SECRET:?INTERNAL_SECRET is required}"}
       EMQX_AUTHENTICATION__1__HTTP__BODY: >-
         {"clientid":"${clientid}","username":"${username}","password":"${password}"}
       EMQX_AUTHENTICATION__1__HTTP__POOL_SIZE: 32
       EMQX_AUTHENTICATION__1__HTTP__POOL_TIMEOUT: "5s"
-      # Dashboard 默认密码
-      EMQX_DASHBOARD__DEFAULT_USERNAME: "admin"
-      EMQX_DASHBOARD__DEFAULT_PASSWORD: "REDACTED-LEAKED-DASHBOARD-PW"
+      # Dashboard 凭证经环境变量注入, 勿使用默认弱口令
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${EMQX_DASHBOARD_USER:-admin}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_DASHBOARD_PASSWORD:?EMQX_DASHBOARD_PASSWORD is required}
       # 日志级别
       EMQX_LOG__CONSOLE__LEVEL: "warning"
       EMQX_LOG__FILE__DEFAULTS__LEVEL: "info"

@@ -21,7 +21,8 @@ function makeRule(overrides: Partial<RuleRecord> = {}): RuleRecord {
     messageType: 'property',
     filter: {},
     targetType: 'http',
-    targetConfig: { url: 'http://target.example.com/hook' },
+    // 公网 IP 字面量(TEST-NET-3): SSRF 字面量校验直接放行, 单测不依赖 DNS/网络
+    targetConfig: { url: 'http://203.0.113.10/hook' },
     ...overrides,
   };
 }
@@ -133,6 +134,42 @@ describe('executeTarget', () => {
     expect(outcome.result).toBe('success');
     expect(outcome.errorMsg).toBeNull();
     expect(outcome.latencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('SSRF 防护: 转发到内网/本机地址直接拒绝, 不发起请求', async () => {
+    const fetcher: FetchImpl = vi.fn(async () => okResponse());
+    for (const url of [
+      'http://localhost/hook',
+      'http://127.0.0.1:8080/admin',
+      'http://192.168.1.1/router',
+      'http://10.0.0.5/db',
+      'http://[::1]:9090/x',
+    ]) {
+      const outcome = await executeTarget(
+        makeRule({ targetConfig: { url } }),
+        makeMsg(),
+        fetcher,
+      );
+      expect(outcome.result).toBe('failed');
+      expect(outcome.errorMsg).toContain('转发目标被拒绝');
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('SSRF 防护: DNS 解析到内网地址的域名被拒绝', async () => {
+    const fetcher: FetchImpl = vi.fn(async () => okResponse());
+    // 注入桩 guard 模拟"域名解析到内网 IP"的攻击场景(DNS rebinding 类)
+    const guard = vi.fn(async () => ({ ok: false as const, reason: '域名 evil.example.com 解析到内网地址: 10.0.0.8' }));
+    const outcome = await executeTarget(
+      makeRule({ targetConfig: { url: 'http://evil.example.com/hook' } }),
+      makeMsg(),
+      fetcher,
+      undefined,
+      guard,
+    );
+    expect(outcome.result).toBe('failed');
+    expect(outcome.errorMsg).toContain('evil.example.com');
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it('http 目标非 2xx 返回 failed 且带状态码', async () => {

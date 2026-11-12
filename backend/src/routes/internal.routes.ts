@@ -574,16 +574,17 @@ export default async function internalRoutes(fastify: FastifyInstance) {
   // POST /api/internal/echo - 转发目标回显端点
   // ============================================================
   // 作为规则引擎 HTTP 转发的演示/联调目标, 原样返回收到的载荷。
-  // 受 X-Internal-Secret 保护; 演示规则转发的 URL 需附带该 Header 时,
-  // 可由目标方自行鉴权(本端点仅回显, 不产生副作用)。
-  // 注: 规则引擎转发的请求不含 X-Internal-Secret, 此处对 echo 放宽鉴权
-  // 仅限 dev 演示用途。
+  // 规则引擎转发的请求不含 X-Internal-Secret, 无法用 secret 鉴权,
+  // 因此该端点仅在非 production 环境注册(dev 演示/联调用),
+  // production 下直接 404, 避免成为无鉴权的信息回显面。
   // ============================================================
-  fastify.post('/api/internal/echo', async (request, reply) => {
-    const body = request.body as Record<string, unknown>;
-    const resp = success({ received: true, echo: body, received_at: new Date().toISOString() });
-    reply.code(resp.statusCode).send(resp.body);
-  });
+  if (config.nodeEnv !== 'production') {
+    fastify.post('/api/internal/echo', async (request, reply) => {
+      const body = request.body as Record<string, unknown>;
+      const resp = success({ received: true, echo: body, received_at: new Date().toISOString() });
+      reply.code(resp.statusCode).send(resp.body);
+    });
+  }
 
   // ============================================================
   // POST /api/internal/mqtt/acl - EMQX HTTP Authorizer Hook

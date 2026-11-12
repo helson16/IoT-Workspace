@@ -5,6 +5,7 @@ import rateLimit from '@fastify/rate-limit';
 
 import { config, isDev } from './config/index.js';
 import { IotError, InternalError } from './shared/errors.js';
+import { isPlatformToken } from './shared/token-scope.js';
 
 import prismaPlugin from './plugins/prisma.js';
 import redisPlugin from './plugins/redis.js';
@@ -93,7 +94,19 @@ fastify.addHook('onRequest', async (request, reply) => {
   }
 
   try {
-    fastify.jwt.verify(authHeader.slice('Bearer '.length));
+    const payload = fastify.jwt.verify(authHeader.slice('Bearer '.length));
+
+    // 权限边界: /api/v1/* 仅允许平台 token(scope=platform)访问。
+    // 设备 token(scope=device) 与平台 token 同密钥签发, 若不校验 scope,
+    // 设备可横向读取任意设备凭据(security.routes 凭据端点)造成越权。
+    if (!isPlatformToken(payload as { scope?: unknown })) {
+      reply.code(403).send({
+        code: 40301,
+        message: '设备令牌无权访问平台 API',
+        details: [],
+      });
+      return;
+    }
   } catch (err) {
     reply.code(401).send({
       code: 40102,
