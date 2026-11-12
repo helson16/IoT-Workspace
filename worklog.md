@@ -792,3 +792,22 @@ Stage Summary:
 - 凭证治理: APP_KEY/APP_SECRET 退出浏览器 bundle, 进程凭证统一收敛到服务端 env + 启动校验; 待办: secret 值实际轮换(需双端同步, 用户决策)
 - 质量基线推进: 302→318 tests, lint 仍 0 error; 修复全程可回归(E2E 脚本验证链路完整)
 
+---
+Task ID: 26
+Agent: Main Agent
+Task: APP_SECRET 轮换落地 — 旧值作废 + 消费方 fail-fast 改造 + 残留字面量清零
+
+Work Log:
+- 生成新 APP_SECRET(openssl rand -hex 32), 双端同步更新 backend/.env + .env.local(附轮换日期注释)
+- 模拟器 fail-fast 改造: sim-device.js 删除泄露字面量 fallback 改 requireEnv(缺失即退出); mock-device.js 硬编码凭证改读 process.env + 同款 requireEnv
+- 残留清零(修复后 grep 复查发现的 5 处旧字面量): backend config dev fallback 默认值改为无条件必填 throw(代码中不再允许任何凭证字面量); README/PHASE3_README 示例改 <必填> 占位或 $APP_KEY 引用; api-catalog bodyExample 改占位符
+- 单测适配: vitest env 注入 APP_KEY/APP_SECRET 占位值(与 JWT_SECRET 同模式), 修复 config fail-fast 导致 5 个套件 import 期挂掉的问题
+- 质量门: backend tsc 0 错 / 318 tests 全过 / lint 0 error 130 warn; root lint 0 error; node --check 两模拟器脚本通过
+- E2E 验证: 旧 secret 调 /api/v1/auth/platform-token → 401(AppSecret 无效, 旧值已作废); 前端代理 /api/platform-token → code=0 + 正常签发 token; 模拟器上报链路正常(近 1min 42 条, 3 设备 @5s 周期)
+- 环境插曲(非本次变更引起): brew services 中 EMQX 处于 none 状态(疑机器重启后未自启), 手动 emqx start 恢复; 模拟器离线 4.5h 的 QoS 队列在 EMQX 恢复后一次性回放形成 ~17k 条 40s 脉冲, 已自愈且速率恢复正常; EMQX authn 回调(含 401 拒绝语义)验证正常
+
+Stage Summary:
+- 轮换闭环: 旧值在整个代码库中仅存于 git 历史(已失效不可用); 全部消费方(后端/前端代理/两个模拟器)改为 env 注入 fail-fast, 后续再轮换只需换 env 重启, 零代码改动
+- 凭证字面量治理完成: 代码/文档/API 目录示例全部占位化, 配置校验与 JWT_SECRET 同级
+- 运维注意: EMQX 为 brew 手动启停(机器重启后需手动 emqx start, 队列回放脉冲属模拟器 QoS 特性非系统缺陷)
+

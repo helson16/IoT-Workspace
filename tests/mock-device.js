@@ -18,8 +18,17 @@ import { randomUUID } from 'crypto';
 const API_BASE = process.env['API_BASE'] || 'http://localhost:3200';
 const MQTT_HOST = process.env['MQTT_HOST'] || 'localhost';
 const MQTT_PORT = parseInt(process.env['MQTT_PORT'] || '1883', 10);
-const APP_KEY = 'iot-explorer-app-key';
-const APP_SECRET = 'REDACTED-LEAKED-APP-SECRET';
+// 平台凭证仅经环境变量注入(fail-fast, 禁止字面量 fallback 进仓库)
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v) {
+    console.error(`[env] 缺少必填环境变量 ${name} — 请在 shell 或 .env 中配置后重试`);
+    process.exit(1);
+  }
+  return v;
+}
+const APP_KEY = requireEnv('APP_KEY');
+const APP_SECRET = requireEnv('APP_SECRET');
 const REPORT_INTERVAL_MS = 5000; // 5s 上报间隔
 
 // ---- Helpers ----

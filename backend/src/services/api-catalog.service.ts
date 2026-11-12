@@ -88,7 +88,7 @@ export const API_CATALOG: ApiCatalogEntry[] = [
     path: '/api/v1/auth/platform-token',
     description: 'AppKey/AppSecret 换取平台访问令牌(Bearer Token)',
     invocable: true,
-    bodyExample: { app_key: 'iot-explorer-app-key', app_secret: 'REDACTED-LEAKED-APP-SECRET' },
+    bodyExample: { app_key: '<APP_KEY>', app_secret: '<APP_SECRET>' },
   },
 
   // ---------------- 产品管理 ----------------

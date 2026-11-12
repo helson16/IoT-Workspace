@@ -26,6 +26,16 @@
 import mqtt from 'mqtt';
 import fs from 'node:fs';
 
+// 必填环境变量 fail-fast: 缺失直接退出, 避免字面量凭证进仓库
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v) {
+    console.error(`[env] 缺少必填环境变量 ${name} — 请在 shell 或 .env 中配置后重试`);
+    process.exit(1);
+  }
+  return v;
+}
+
 const SIM_MODE = (process.env.SIM_MODE || 'mqtt').toLowerCase();
 // 默认走 EMQX TLS 监听(mqtts @8883, CA=backend/.certs/ca.pem); 明文回退: MQTT_URL=mqtt://localhost:1883
 const MQTT_URL = process.env.MQTT_URL || 'mqtts://localhost:8883';
@@ -75,8 +85,9 @@ async function getPlatformToken() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      app_key: process.env.APP_KEY || 'iot-explorer-app-key',
-      app_secret: process.env.APP_SECRET || 'REDACTED-LEAKED-APP-SECRET',
+      // 平台凭证仅经环境变量注入(fail-fast, 禁止字面量 fallback 进仓库)
+      app_key: requireEnv('APP_KEY'),
+      app_secret: requireEnv('APP_SECRET'),
     }),
   });
   const json = await res.json();

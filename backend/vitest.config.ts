@@ -7,9 +7,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/unit/**/*.test.ts'],
-    // config/index.ts 在 import 期做 JWT_SECRET 非空检查, 测试环境注入占位值
+    // config/index.ts 在 import 期做 JWT_SECRET/APP_KEY/APP_SECRET 非空检查,
+    // 测试环境注入占位值(fail-fast 校验不因缺 env 而挂掉所有套件)
     env: {
       JWT_SECRET: 'unit-test-secret',
+      APP_KEY: 'unit-test-app-key',
+      APP_SECRET: 'unit-test-app-secret',
     },
   },
 });

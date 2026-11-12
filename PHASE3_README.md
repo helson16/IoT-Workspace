@@ -171,9 +171,10 @@ API_BASE=http://192.168.1.100:3200 MQTT_HOST=192.168.1.100 node tests/mock-devic
 ### 5.1 获取平台 Token
 
 ```bash
+# APP_KEY/APP_SECRET 取自 backend/.env(轮换后禁止在文档中写死凭证值)
 curl -s -X POST http://localhost:3200/api/v1/auth/platform-token \
   -H 'Content-Type: application/json' \
-  -d '{"app_key":"iot-explorer-app-key","app_secret":"REDACTED-LEAKED-APP-SECRET"}' | jq
+  -d "{\"app_key\":\"$APP_KEY\",\"app_secret\":\"$APP_SECRET\"}" | jq
 ```
 
 ### 5.2 查看产品列表
@@ -181,7 +182,7 @@ curl -s -X POST http://localhost:3200/api/v1/auth/platform-token \
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:3200/api/v1/auth/platform-token \
   -H 'Content-Type: application/json' \
-  -d '{"app_key":"iot-explorer-app-key","app_secret":"REDACTED-LEAKED-APP-SECRET"}' | jq -r '.data.access_token')
+  -d "{\"app_key\":\"$APP_KEY\",\"app_secret\":\"$APP_SECRET\"}" | jq -r '.data.access_token')
 
 curl -s http://localhost:3200/api/v1/products \
   -H "Authorization: Bearer $TOKEN" | jq

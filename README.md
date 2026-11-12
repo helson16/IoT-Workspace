@@ -116,8 +116,8 @@ npx tsx --env-file=.env tools/emqx-setup.mts
 ```ini
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/iot_explorer?schema=public
 JWT_SECRET=<必填>
-APP_KEY=iot-explorer-app-key
-APP_SECRET=REDACTED-LEAKED-APP-SECRET
+APP_KEY=<必填, 自定义标识>
+APP_SECRET=<必填, openssl rand -hex 32 生成, 与根目录 .env.local 保持一致>
 INTERNAL_SECRET=REDACTED-LEAKED-INTERNAL-SECRET     # EMQX 回调密钥
 EMQX_API_KEY / EMQX_API_SECRET          # emqx-setup.mts 生成
 MQTT_BROKER_PORT=8883
