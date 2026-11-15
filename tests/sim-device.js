@@ -20,7 +20,7 @@
  * 用法: node tests/sim-device.js [设备名...]   (缺省 = 温控器 + 两个摄像头)
  * 环境变量: SIM_MODE(mqtt|http, 默认 mqtt) MQTT_URL(默认 mqtts://localhost:8883, 明文回退 mqtt://localhost:1883)
  *           SERVER_ROOT_CA(默认 backend/.certs/ca.pem)
- *           API_BASE(默认 http://localhost:3200) INTERNAL_SECRET(默认 REDACTED-LEAKED-INTERNAL-SECRET)
+ *           API_BASE(默认 http://localhost:3200) INTERNAL_SECRET(必填, 从 backend/.env 提供)
  */
 
 import mqtt from 'mqtt';
@@ -43,7 +43,8 @@ const SERVER_ROOT_CA = process.env.SERVER_ROOT_CA
   || new URL('../backend/.certs/ca.pem', import.meta.url).pathname;
 const SDK_APP_ID = process.env.MQTT_SDK_APP_ID || '12010126';
 const API_BASE = process.env.API_BASE || 'http://localhost:3200';
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'REDACTED-LEAKED-INTERNAL-SECRET';
+// 内部回调密钥仅经环境变量注入(fail-fast, 禁止字面量 fallback 进仓库)
+const INTERNAL_SECRET = requireEnv('INTERNAL_SECRET');
 const PRODUCT_ID = 'prod-a1b2c3d4'; // 智能温控器
 const CAMERA_PRODUCT_NAME = '智能摄像头';
 const REPORT_INTERVAL_MS = Number(process.env.REPORT_INTERVAL_MS || 5000);

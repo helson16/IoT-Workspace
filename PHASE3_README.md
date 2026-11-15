@@ -64,7 +64,7 @@ bash init-infra.sh
   EMQX MQTT:   localhost:1883  (TCP)
   EMQX SSL:    localhost:8883  (TLS)
   EMQX WS:     localhost:8083  (WebSocket)
-  EMQX Dash:   http://localhost:18083  (admin / REDACTED-LEAKED-DASHBOARD-PW)
+  EMQX Dash:   http://localhost:18083  (凭证经 env 注入: EMQX_DASHBOARD_USER/PASSWORD)
 ```
 
 **常用管理命令：**
@@ -98,12 +98,12 @@ EMQX 的 HTTP Auth 后端已配置指向 `http://host.docker.internal:3200/api/i
 
 **验证流程：**
 
-1. 打开 EMQX Dashboard: http://localhost:18083 (admin / REDACTED-LEAKED-DASHBOARD-PW)
+1. 打开 EMQX Dashboard: http://localhost:18083 (凭证经 env 注入: EMQX_DASHBOARD_USER/PASSWORD)
 2. 进入 **Authentication** → **Password Based** → **HTTP**
 3. 确认配置项：
    - URL: `http://host.docker.internal:3200/api/internal/mqtt/auth`
    - Method: POST
-   - Headers 包含 `X-Internal-Secret: REDACTED-LEAKED-INTERNAL-SECRET`
+   - Headers 包含 `X-Internal-Secret: <INTERNAL_SECRET>`(取自 backend/.env)
 
 **未注册设备连接测试（应被拒绝）：**
 
@@ -230,8 +230,8 @@ curl -s -X PUT "http://localhost:3200/api/v1/shadows/{deviceId}" \
 | PostgreSQL | `localhost:5432` | postgres / postgres (DB: iot_explorer) |
 | Redis | `localhost:6379` | 无密码 |
 | EMQX MQTT | `localhost:1883` | 一机一密（设备注册时获取） |
-| EMQX Dashboard | `http://localhost:18083` | admin / REDACTED-LEAKED-DASHBOARD-PW |
-| 内部 Webhook Secret | Header: `X-Internal-Secret` | `REDACTED-LEAKED-INTERNAL-SECRET` |
+| EMQX Dashboard | `http://localhost:18083` | 凭证经 env 注入(EMQX_DASHBOARD_USER/PASSWORD) |
+| 内部 Webhook Secret | Header: `X-Internal-Secret` | 取自 backend/.env 的 INTERNAL_SECRET |
 
 ---
 
