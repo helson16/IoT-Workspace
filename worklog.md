@@ -811,3 +811,23 @@ Stage Summary:
 - 凭证字面量治理完成: 代码/文档/API 目录示例全部占位化, 配置校验与 JWT_SECRET 同级
 - 运维注意: EMQX 为 brew 手动启停(机器重启后需手动 emqx start, 队列回放脉冲属模拟器 QoS 特性非系统缺陷)
 
+---
+Task ID: 27
+Agent: Main Agent
+Task: INTERNAL_SECRET 轮换 + git 历史清洗(filter-repo) — 泄露凭证彻底出清
+
+Work Log:
+- 决策: 历史中除已作废的 APP_SECRET 外, EMQX 回调密钥 INTERNAL_SECRET 仍在历史中且为当前有效值, 单独清洗无意义; 经用户确认采用"先轮换再一并清洗"方案(同一次 force push 出清两个泄露值 + Docker 路径 dashboard 密码)
+- INTERNAL_SECRET 轮换: openssl rand -hex 24 生成新值, backend/.env 更新(附轮换注释); 重跑幂等脚本 emqx-setup.mts 同步 EMQX authn/actions/ACL 头; 后端重启加载
+- 消费方清零: sim-device.js INTERNAL_SECRET 改 requireEnv fail-fast; README/PHASE3_README/init-infra.sh 文档字面量(env 注入占位, 含 EMQX dashboard 凭证 public123 共 4 处); worklog 旧条目去字面量化
+- E2E 验证: 新 secret + 真实设备凭证 → 200 {"result":"allow"}; 旧 secret → 401; 模拟器自动重连恢复上报(36 条/min, 9 设备在线)
+- git 历史清洗: 先建全量 bundle 备份(/private/tmp, 含旧历史); git filter-repo 2.47.0 --replace-text 替换三个泄露值(iot-explorer-app-secret/dev-internal-secret/public123 → REDACTED-*); 42 提交全量重写; -S 扫描与 blob 级逐提交复扫均确认清零
+- force push 重写后历史至 origin/main(b421d9c); 旧提交 c608301 在 GitHub 已不可达(HTTP 404, GC 生效)
+- 排查过程: backend/.env 从未入库; 根 .env 历史仅旧 sqlite URL 无真实密钥; JWT_SECRET 实际值从未进历史; 确认三个字面量即完整泄露清单
+- 环境插曲与修复: ① lsof -ti :3200 | xargs kill 会误杀持有 backend 连接的 EMQX(教训: 杀端口进程须加 -sTCP:LISTEN); ② 沙箱环境会回收 emqx start 的 daemon 进程(EMQX 表现为止动即死), 改用 emqx foreground 后台任务方式常驻解决
+
+Stage Summary:
+- 凭证出清闭环: 两个密钥值已轮换作废 + 历史字面量全量抹除 + 远程重写完成, 公开仓库中泄露值(含历史)不复存在; 后续轮换任意密钥仅需改 env 重启 + 可选重跑 emqx-setup.mts, 零代码改动
+- 历史重写副作用: 全部 commit hash 变更(README/worklog 中旧 hash 引用失效属预期); 已有 clone 需 git fetch + reset --hard origin/main 同步
+- 待办遗留: PG 密码(postgres, localhost 绑定)与 EMQX dashboard 默认口令(admin/public, 18083 全网监听)为低风险项, 建议后续窗口轮换; 备份 bundle 含旧泄露值, 保留至确认远程无误后删除
+
